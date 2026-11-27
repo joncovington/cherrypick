@@ -339,6 +339,92 @@ def test_a_voided_flies_row_is_out_of_the_fact_set_and_the_reconcile_alike(
     assert reconcile.check_session("2026-10-08") == {"session": "2026-10-08", "ok": True, "mismatches": []}
 
 
+# --------------------------------------------------------------------------- rebuilding a final set (#1042)
+
+
+NOTHING_CLOSED = {"closed": 0, "net": 0.0}
+
+
+def _earnings_open_trade(tmp_path, monkeypatch):
+    """An earnings ledger with one trade opened 2026-10-23 and still open, so it is carried."""
+    db = tmp_path / "paper_trades.db"
+    opened = _epoch("2026-10-23T12:00:00")
+    _earnings_db(db, [("CSCO", "p", "iron_fly", None, 5.0, None, None, opened, 351.0, None, None, None)])
+    monkeypatch.setattr(facts._paths, "module_db", lambda module, filename="paper_trades.db": db)
+    return db
+
+
+def test_a_rebuilt_final_set_keeps_what_the_session_carried(store, tmp_path, monkeypatch):
+    """2026-11-13: rebuilding four final sets after a ledger correction turned pmcc's 2 positions and
+    $17,215 at risk into 0 and null, because the carried positions are read from the book as it stands
+    now and these had closed since. The stored block stands, and the set says where it came from."""
+    db = _earnings_open_trade(tmp_path, monkeypatch)
+    first = facts.build("2026-10-23", status=facts.STATUS_FINAL, modules=["earnings"])
+    assert first["modules"]["earnings"]["carried_overnight"] == {
+        "positions": 1,
+        "capital_at_risk": 351.0,
+        "capital_unknown": 0,
+    }
+    facts.write(first)
+
+    conn = sqlite3.connect(db)  # the carried trade settles the next morning
+    conn.execute("UPDATE trades SET closed_at = ?, pnl = 40.0", (_epoch("2026-10-24T10:00:00"),))
+    conn.commit()
+    conn.close()
+
+    rebuilt = facts.build("2026-10-23", status=facts.STATUS_FINAL, modules=["earnings"])["modules"][
+        "earnings"
+    ]
+    assert rebuilt["carried_overnight"] == first["modules"]["earnings"]["carried_overnight"]
+    assert rebuilt["carried_overnight_kept_from"] == first["generated_at"]
+
+
+def test_a_second_rebuild_keeps_the_first_origin(store, monkeypatch):
+    def fake(module, session, db_path=None):
+        return {"ok": True, "results": NOTHING_CLOSED, "carried_overnight": {"positions": 0}}
+
+    monkeypatch.setattr(facts, "build_module_facts", fake)
+    stored = {"positions": 3, "capital_at_risk": 900.0, "capital_unknown": 0}
+    facts.write(
+        {
+            "session": "2026-10-23",
+            "status": facts.STATUS_FINAL,
+            "generated_at": "2026-10-24T10:15:00+00:00",
+            "modules": {"earnings": {"ok": True, "carried_overnight": stored}},
+        }
+    )
+    second = facts.build("2026-10-23", status=facts.STATUS_FINAL, modules=["earnings"])
+    facts.write(second)
+    third = facts.build("2026-10-23", status=facts.STATUS_FINAL, modules=["earnings"])
+    for built in (second, third):
+        module = built["modules"]["earnings"]
+        assert module["carried_overnight"] == stored
+        assert module["carried_overnight_kept_from"] == "2026-10-24T10:15:00+00:00"
+
+
+@pytest.mark.parametrize(
+    "prior",
+    [
+        None,  # no set yet
+        {
+            "status": "provisional",
+            "modules": {"earnings": {"ok": True, "carried_overnight": {"positions": 3}}},
+        },
+        {"status": "final", "modules": {"earnings": {"ok": False, "reason": "ledger not found"}}},
+        {"status": "final", "modules": {"earnings": {"ok": True}}},  # an older set with no block
+    ],
+)
+def test_the_carried_block_is_only_kept_from_a_final_set_that_has_one(store, monkeypatch, prior):
+    fresh = {"positions": 1, "capital_at_risk": 351.0, "capital_unknown": 0}
+    built = {"ok": True, "results": NOTHING_CLOSED, "carried_overnight": fresh}
+    monkeypatch.setattr(facts, "build_module_facts", lambda m, s, db_path=None: built)
+    if prior is not None:
+        facts.write({"session": "2026-10-23", "generated_at": "2026-10-24T00:00:00+00:00", **prior})
+    module = facts.build("2026-10-23", status=facts.STATUS_FINAL, modules=["earnings"])["modules"]["earnings"]
+    assert module["carried_overnight"] == fresh
+    assert "carried_overnight_kept_from" not in module
+
+
 def test_reconcile_says_so_when_there_is_no_fact_set(store):
     assert reconcile.check_session("1999-01-01")["ok"] is False
 

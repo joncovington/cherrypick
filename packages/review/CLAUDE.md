@@ -34,6 +34,11 @@ they cannot disagree.
   with no breaks table reports `null`, not `[]`, so a trend cannot assume continuity it never verified.
 - **A session is `provisional` before it is `final`.** 0DTE modules complete at the close; earnings
   settles the next morning, so session D is finalised on D+1.
+- **A rebuild of a final set keeps its `carried_overnight`.** The block is read from the book as it
+  stands now, so a past session's carried positions, closed since, would drop out and the rebuild would
+  write 0 and null. `build` keeps each module's stored block and stamps `carried_overnight_kept_from`
+  (the stored set's `generated_at`). A ledger correction that itself changes what was carried leaves the
+  block stale until an as-of reader per schema in `core.ledgers` replaces this (#1042).
 - **Every module with a `core.ledgers` reader is reviewed.** A module with no results reports as such;
   being absent is a different, wrong statement. `tests/test_module_coverage.py` drives off `READERS`
   and fails on a reader with no `MODULES` entry, on a reviewed module naming a nonexistent schema, and
