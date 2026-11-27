@@ -676,12 +676,58 @@ def _same_terms(prior: dict | None, detail: dict) -> bool:
     return isinstance(old, dict) and all(old.get(k) == detail.get(k) for k in ("shares", "limit", "tif"))
 
 
+def validate_dry_run(config: dict) -> bool:
+    """Whether a dry-run intent is sent to the broker for validation: on unless `live.validate_dry_run`
+    is exactly false. Validation is the broker's own dry run (`Broker.place(spec, live=False)`): it
+    checks the order and states its buying-power effect and fees, and places nothing."""
+    return live_gates.live_block(config).get("validate_dry_run") is not False
+
+
+def _validation(res: dict) -> dict:
+    """The broker's verdict on one intended order, without the account: whether it was accepted,
+    its problems, its buying-power effect and its fees, as the broker's dry run states them."""
+    response = res.get("response") if isinstance(res.get("response"), dict) else {}
+    out = {"ok": bool(res.get("ok"))}
+    for key, value in (
+        ("error", res.get("error")),
+        ("problems", res.get("problems")),
+        ("buying_power", res.get("buying_power")),
+        ("fees", response.get("fee_calculation")),
+        ("warnings", response.get("warnings")),
+    ):
+        if value:
+            out[key] = value
+    return out
+
+
+def _validation_settled(prior: dict | None) -> bool:
+    """Whether the last row for this intent already holds the broker's answer: accepted, or refused
+    with its reasons. A call that never reached an answer (the broker unreachable) is tried again."""
+    try:
+        old = json.loads((prior or {}).get("detail") or "null")
+    except ValueError:
+        return False
+    v = old.get("validation") if isinstance(old, dict) else None
+    return isinstance(v, dict) and (v.get("ok") is True or bool(v.get("problems")))
+
+
 def _record_results(
-    conn, results: list[dict], *, arm: str, day: str, dry: bool, account: str | None
+    conn,
+    results: list[dict],
+    *,
+    arm: str,
+    day: str,
+    dry: bool,
+    account: str | None,
+    validate: Callable[[dict], dict] | None = None,
 ) -> list[dict]:
     """Journal what the executor did. Returns the dry-run intents (the orders it would send), which
     `--status` lists; the journal takes one only when it is new or its terms changed since the last
-    row for that client id, so a standing intent is one row and not one per minute."""
+    row for that client id, so a standing intent is one row and not one per minute.
+
+    With `validate` (the broker's dry run), a new intent to place is validated once and the answer
+    journaled with it (`validation`); a standing intent is validated again only while it has no
+    answer, so a broker that was unreachable is asked again and one that answered is not."""
     intents: list[dict] = []
     for r in results:
         a = r["action"]
@@ -692,11 +738,28 @@ def _record_results(
         if spec:
             detail.update(shares=leg.get("quantity"), limit=spec.get("price"), tif=spec.get("time_in_force"))
         if dry:
-            intents.append({"what": what, **detail})
             reason = f"would {what}"
-            if not _same_terms(live_db.last_dry_run(conn, arm, a["symbol"], reason), detail):
+            prior = live_db.last_dry_run(conn, arm, a["symbol"], reason)
+            same = _same_terms(prior, detail)
+            check = validate is not None and a["kind"] == "place" and bool(spec)
+            retry = check and same and not _validation_settled(prior)
+            if check and (not same or retry):
+                try:
+                    detail["validation"] = _validation(validate(spec))
+                except Exception as exc:  # noqa: BLE001 -- a validation that raised is no answer, not a stop
+                    detail["validation"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            elif check:
+                detail["validation"] = json.loads(prior.get("detail") or "{}").get("validation")
+            intents.append({"what": what, **detail})
+            if not same:
                 _journal(conn, day=day, arm=arm, symbol=a["symbol"], mode="dry_run", reason=reason,
                          accepted=True, detail=detail)  # fmt: skip
+            elif retry:
+                # The same intent, now with the broker's answer: the journal collapses a repeated row
+                # into a count and keeps its first detail, so the answer is written onto that row.
+                live_db.set_decision_detail(
+                    conn, prior["id"], _redact.redact_accounts(json.dumps(detail, default=str))
+                )
             continue
         if not r.get("ok"):
             detail.update(error=r.get("error"), skipped=r.get("skipped"), uncertain=r.get("uncertain"),
@@ -820,7 +883,9 @@ def _cycle(conn, broker, config, rule, *, when, cache_path, account, armed, halt
         symbol, _, why = text.partition(": ")
         note("blocked", symbol if why else "-", why or text)
     results = orders.Executor(broker, dry_run=dry, log=log).apply(the_plan)
-    intents = _record_results(conn, results, arm=arm, day=day, dry=dry, account=account)
+    # In dry-run the broker still checks each new intent, through its own dry run, and places nothing.
+    validate = (lambda spec: broker.place(spec, False)) if dry and validate_dry_run(config) else None
+    intents = _record_results(conn, results, arm=arm, day=day, dry=dry, account=account, validate=validate)
     _write_checks(
         {
             "at": now_iso(),

@@ -224,6 +224,13 @@ def last_dry_run(conn, arm: str, symbol: str, reason: str) -> dict | None:
     return dict(r) if r else None
 
 
+def set_decision_detail(conn, row_id: int, detail: str) -> None:
+    """Rewrite one journal row's detail: the dry-run intent whose broker validation arrived after the
+    row was first written (`live_tick._record_results`). Nothing else of the row changes."""
+    conn.execute("UPDATE ladder_decisions SET detail = ? WHERE id = ?", (detail, row_id))
+    conn.commit()
+
+
 def lots_of(conn, arm: str, symbol: str) -> list[dict]:
     return [
         dict(r)
