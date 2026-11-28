@@ -474,15 +474,17 @@ async function renderSecrets(quiet) {
         // Status only: the live account is chosen against the broker's list, in a terminal.
         const acct = info.account
           ? ` <span class="note" style="display:inline">${esc(info.account)}</span>` : "";
-        const flag = info.modules.length ? `--module ${esc(info.modules[0])} ` : "";
+        // The shared login has no module; a service several modules share names none of them.
+        const flag = info.modules.length === 1 ? `--module ${esc(info.modules[0])} `
+          : info.modules.length ? "--module &lt;m&gt; " : "";
         h += `<div class="row"><span class="k">${esc(key)}
             <span class="badge ${isSet ? "set" : "unset"}">${isSet ? "set" : "not set"}</span>${acct}</span>
           <span class="note" style="display:inline">set in a terminal:
-            <code>run.py account ${flag}--set &lt;last4&gt;</code></span></div>`;
+            <code>run.py account ${flag}--set &lt;last4&gt;</code> (or <code>--clear</code>)</span></div>`;
         continue;
       }
       h += `<div class="row"><span class="k">${esc(key)}
-          <span class="badge ${isSet ? "set" : "unset"}">${isSet ? "set" : "not set"}</span>${acct}</span>
+          <span class="badge ${isSet ? "set" : "unset"}">${isSet ? "set" : "not set"}</span></span>
         <input type="password" placeholder="new value" autocomplete="off">
         <button data-svc="${esc(svc)}" data-key="${esc(key)}" data-op="set">Set</button>
         <button data-svc="${esc(svc)}" data-key="${esc(key)}" data-op="delete">Delete</button></div>`;

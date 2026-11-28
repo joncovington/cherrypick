@@ -130,7 +130,7 @@ def _result(service: str, key: str, store: CredentialStore) -> dict[str, Any]:
 ACCOUNT_REFUSAL = (
     "the live account is not written here: choose it against the broker's own list with"
     " `run.py account --module <m> --set <last4>` (no --module for the suite's shared account),"
-    " or the console's onboarding"
+    " or the console's onboarding; `--clear` in place of `--set` removes it"
 )
 
 
