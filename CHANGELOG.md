@@ -19,6 +19,11 @@ beyond the latest release.
   instead of "settling at the close". The Weekly put page says "half day, not traded" on an early close. The skate tab
   marks a name whose best call and put both pass, and the income lists get a Hide leveraged funds switch that starts off.
   Nothing to do.
+- **The watchdog's settlement checks follow an early close.** The paper and live settlement checks count
+  their grace from the day's own close (13:00 on a half day, not 16:00), and the live-positions check drops
+  the day's expired contracts from 13:00, so an unsettled book is flagged three hours sooner on 2026-12-24
+  and settled 0DTE legs no longer read as a mismatch until 16:00. `weeklyput`'s `--force` skips the window
+  but never the half-day refusal. Nothing to do.
 - **A chain fetch no longer asks the vendor for a day that is not a trading session, and the store's
   quality report lists any such day it holds.** The vendor answers a Saturday with a placeholder market
   (every option bid 0.05, ask 99.00), which a study read as a session. `fetch-chains` counts these

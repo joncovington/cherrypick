@@ -107,3 +107,24 @@ def test_the_stream_request_still_asks_for_an_ordinary_cycle(config, conn, cache
         "SPY": [expiry.isoformat()],
     }
     assert want["legs"]
+
+
+def test_a_forced_run_on_a_half_day_still_refuses(config, conn, stocked):
+    """`force` skips the window, never the half-day refusal: good quotes, a forced run at 10:00 on the
+    half day, and still no sale. Put `not force and` back on the early-close branch in `run_once` and
+    this fails with two open positions."""
+    out = paper_loop.run_once(config, conn, cache_path=stocked.path, when=at(HALF_DAY, 10, 0), force=True)
+    assert out["phase"] == "half_day" and set(out["entries"].values()) == {"missed"}
+    assert db.open_position_count(conn) == 0
+    assert {e["refusal"] for e in db.entries(conn)} == {"half_day_no_entries"}
+
+
+def test_a_forced_run_on_an_ordinary_day_still_sells_outside_the_window(config, conn, cache):
+    """The control: `force` still skips the window on a full day."""
+    entry, expiry = date(2026, 11, 6), date(2026, 11, 13)
+    years = clock.years_to(entry, expiry)
+    cache.last("SPX", 6800.0).last("SPY", 680.0)
+    cache.chain("SPX", expiry.isoformat(), "SPXW", black_chain(6800.0, 0.16, years, range(6000, 7001, 5)))
+    cache.chain("SPY", expiry.isoformat(), "SPY", black_chain(680.0, 0.16, years, range(600, 701)))
+    out = paper_loop.run_once(config, conn, cache_path=cache.path, when=at(entry, 10, 0), force=True)
+    assert out["phase"] == "entry" and set(out["entries"].values()) == {"entered"}

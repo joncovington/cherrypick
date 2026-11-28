@@ -172,3 +172,20 @@ def test_falls_back_to_global_age_when_underlying_unreported(monkeypatch):
     findings, calls = _run_streamer(monkeypatch, {"running": True, "oldest_event_age_s": 9999})
     assert calls["started"] is True
     assert "no events for" in findings[0].message
+
+
+@pytest.mark.parametrize(
+    ("day", "overdue"),
+    [
+        (datetime(2026, 11, 27, 13, 45), True),  # an early close: 13:00 plus the 30-minute grace
+        (datetime(2026, 11, 27, 13, 20), False),  # still inside the grace
+        (datetime(2026, 11, 20, 13, 45), False),  # an ordinary day: the close is three hours off
+    ],
+)
+def test_the_settlement_grace_starts_at_the_days_own_close(monkeypatch, day, overdue):
+    """On an early close the grace runs from 13:00, not 16:00. Put the fixed `MARKET_CLOSE` back in
+    `_check_settlement` and the first case fails."""
+    out = _run_settle(monkeypatch, {"session_settled": False, "positions_today": 3}, now_et=day)
+    assert bool(out) is overdue
+    if overdue:
+        assert out[0].status == WARN
