@@ -33,7 +33,7 @@ from cherrypick.core import redact as _redact
 from cherrypick.core.clock import minute_of_day, now_et, now_iso
 
 from cherrypick.ladder import cli as climod
-from cherrypick.ladder import live_gates, paper_loop, stream_request
+from cherrypick.ladder import live_db, live_gates, paper_loop, stream_request
 
 MODULE = "ladder"
 ARMED_BY = "live-ladder-start"
@@ -89,6 +89,27 @@ def gates_now(config: dict, *, designated: str | None = None, when=None) -> list
     )
 
 
+def book_counts() -> tuple[int | None, int | None]:
+    """(open lots, working orders) the live ledger holds, from the file alone. A ledger that was never
+    written, or one with no lot or order table yet, holds none; one that cannot be read is
+    (None, None), because it cannot show that nothing is held. The orchestrator reads these before
+    it changes the designated account."""
+    path = live_db.live_db_path()
+    if not os.path.exists(path):
+        return 0, 0
+    try:
+        conn = live_db.connect_ro(path)
+        try:
+            tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+            lots = len(live_db.open_lots(conn)) if "ladder_positions" in tables else 0
+            orders = len(live_db.open_orders(conn)) if "ladder_orders" in tables else 0
+            return lots, orders
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 -- a status note must say "unknown", never break the status
+        return None, None
+
+
 def status(config: dict, *, designated: str | None = None, when=None) -> dict:
     """One JSON readiness object. No broker call; the account is shown masked."""
     when = when or now_et()
@@ -98,8 +119,12 @@ def status(config: dict, *, designated: str | None = None, when=None) -> dict:
     from cherrypick.ladder import live_tick
 
     dry = live_tick.dry_run(config)
+    open_lots, working_orders = book_counts()
     return {
         "ok": True,
+        "open_lots": open_lots,
+        "working_orders": working_orders,
+        "orphaned_orders": len(live_tick.read_orphans()),
         "module": MODULE,
         "order_path": True,
         "dry_run": dry,

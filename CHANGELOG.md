@@ -20,6 +20,16 @@ beyond the latest release.
   once a day, and a refusal is a WARN naming the file and the message. Every save of `automations.json`
   (the Config page, the settings tool, the Groups, Builder and retire saves) runs it on the candidate
   text first and refuses what the loop would refuse. Nothing to do.
+- **`account --set` and `--clear` refuse while a live loop is armed or holds a book.** The designated
+  account cannot change under a live loop that is armed for today, or under one that holds a position or
+  a working order (MEIC's main account manages its book even when it is not armed). The refusal is in
+  the orchestrator's account code, so the console's account step and `connect` get it too; there is no
+  override, and a status that cannot be read refuses. The suite-wide account is checked against every
+  module that inherits it, a second login's against that login alone. A retired module (switched off in
+  the suite config and in its own live switch) still refuses when it is armed or holds something, but a
+  status of its that cannot be read is only a warning in the result. The command names the module and
+  the reason, and `account` now exits 1 on any refusal it prints (an unresolvable selector included).
+  The ladder's `--status` now reports `open_lots`, `working_orders` and `orphaned_orders`. Nothing to do.
 - **The watchdog's settlement checks follow an early close.** The paper and live settlement checks count
   their grace from the day's own close (13:00 on a half day, not 16:00), and the live-positions check drops
   the day's expired contracts from 13:00, so an unsettled book is flagged three hours sooner on 2026-12-24

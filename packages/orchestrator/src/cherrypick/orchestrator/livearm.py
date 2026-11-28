@@ -25,8 +25,8 @@ its own refusals, rather than a hole in the guard:
   without the day's arm record), and it arms nothing.
 
 Only MEIC's main login is covered. Another login's `live_accounts.<login>.arm` is whole under the guarded
-`/live_accounts`, and the ladder's status does not say whether it holds lots, so neither can be judged flat
-here; both refuse as unsupported rather than guess. A refusal is data, with a `code`, never an exception.
+`/live_accounts`, and the ladder is not covered here; both refuse as unsupported rather than guess.
+A refusal is data, with a `code`, never an exception.
 """
 
 from __future__ import annotations
