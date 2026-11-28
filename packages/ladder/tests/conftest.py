@@ -82,6 +82,24 @@ def ledger(tmp_path):
     return db.connect(str(tmp_path / "paper_trades.db"))
 
 
+@pytest.fixture
+def no_broker_built(monkeypatch):
+    """`BrokerAdapter` replaced where none may be built: an attempt is recorded in the returned list
+    and fails the test there and then. A class, not a lambda, so the tick's `isinstance` check still
+    reads it."""
+    from cherrypick.ladder import live_tick
+
+    built: list[dict] = []
+
+    class NeverBuilt:
+        def __init__(self, config):
+            built.append(config)
+            raise AssertionError("a broker was built with a gate unmet")
+
+    monkeypatch.setattr(live_tick, "BrokerAdapter", NeverBuilt)
+    return built
+
+
 def at(day: str, hhmm: str) -> datetime:
     h, m = hhmm.split(":")
     return datetime.fromisoformat(day).replace(hour=int(h), minute=int(m), tzinfo=ET)
