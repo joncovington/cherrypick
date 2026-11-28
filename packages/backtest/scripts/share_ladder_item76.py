@@ -91,8 +91,8 @@ CHAIN = (
 
 #: Fixes to how the replay reads its data, each logged as working-rules.md asks.
 REPLAY_CORRECTIONS = (
-    {"on": "2026-11-28", "what": "the plan requests every path a call can be read from: each session from the "
-     "hospital day to the window's end that a sale can happen on, its expiry through its segment's end "
+    {"on": "2026-11-28", "what": "the plan requests every path a call can be read from: each session from "
+     "the hospital day to the window's end that a sale can happen on, its expiry through its segment's end "
      "(`reachable_sales`), not only the path that assumes every sale goes through",
      "why": "a sale that finds no chain or no strike waits a session, and that session's expiry was never "
      "requested; reading only declared paths (#1439) then refused it (SOXL, 2021-08-23, the 2021-10-08 "
@@ -310,9 +310,9 @@ def reachable_sales(bars: list[Bar], lot: Lot, expiries: list[str], split_dates:
 
 
 def path_requests(sym: str, bars: list[Bar], lots: list[Lot], expiries, split_dates, last) -> list[dict]:
-    """Every (expiry, start, through) path the hospital lots could read, one per (name, expiry): each session
-    a call can be sold from (`reachable_sales`), not only `plan_lot`'s path, so a sale that waits a session for
-    a chain or a strike reads only paths the study declared (#1439)."""
+    """Every (expiry, start, through) path the hospital lots could read, one per (name, expiry): each
+    session a call can be sold from (`reachable_sales`), not only `plan_lot`'s path, so a sale that waits a
+    session for a chain or a strike reads only paths the study declared (#1439)."""
     span: dict[str, list[str]] = {}
     for lot in lots:
         if lot.hospital is None:
