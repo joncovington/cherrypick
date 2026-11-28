@@ -346,6 +346,12 @@
           "cherrypick.automations.paper_loop",
           "--status"
         ],
+        "_config_check_note": "The watchdog runs config_check_argv by subprocess, once for each change to the module's config file and once a new day, on any day at any hour, and raises a WARN naming the file and the refusal when the paper loop would refuse the config. It loads the config as the loop does and writes nothing (unlike --status, which opens the ledger and rewrites the stream request). Opt-in; a module with no strict loader leaves it out.",
+        "config_check_argv": [
+          "-m",
+          "cherrypick.automations.cli",
+          "check"
+        ],
         "once_argv": [
           "-m",
           "cherrypick.automations.paper_loop",

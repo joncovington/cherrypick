@@ -53,11 +53,21 @@ def run_module_payoff(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any
 
 def run_module_cli(cfg: dict[str, Any], command: str, req: dict[str, Any]) -> dict[str, Any] | None:
     """The automations module's `cli <command>` with `req` as JSON on stdin; its JSON answer, or None."""
+    return _run_cli(cfg, [command], json.dumps(req))
+
+
+def run_candidate_check(cfg: dict[str, Any], text: str) -> dict[str, Any] | None:
+    """The module's `cli check --stdin` of config text not yet written (would the paper loop load it?):
+    `{ok}` or `{ok: false, error}`, or None when it could not be asked. Writes nothing."""
+    return _run_cli(cfg, ["check", "--stdin"], text)
+
+
+def _run_cli(cfg: dict[str, Any], args: list[str], stdin: str) -> dict[str, Any] | None:
     mcfg = (cfg.get("modules") or {}).get(TARGET) or {}
     try:
         r = subprocess.run(
-            [cfgmod.python_exe(), "-m", "cherrypick.automations.cli", command],
-            input=json.dumps(req),
+            [cfgmod.python_exe(), "-m", "cherrypick.automations.cli", *args],
+            input=stdin,
             cwd=str(cfgmod.module_root(mcfg, TARGET)),
             capture_output=True,
             text=True,

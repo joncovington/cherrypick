@@ -106,6 +106,16 @@ bound at a session's grain), the sessions missed with `group_risk` by which cap 
 less room in the check's own reading), and `core.portfolio` over the members' net per session. The
 automations in no group are one line beside them. Membership is the config's now. Read-only.
 
+**The config check** (`configcheck.py`, `cli check [--stdin]`). Would the paper loop refuse this config? It
+loads the file the loop would read (`home.module_config_source`, the precedence `load_module_config` uses),
+or with `--stdin` the candidate text given there, and resolves every automation as the loop does
+(`config.load_arms`, the groups included, as of today). It answers `{ok}` or `{ok: false, error, path}`, the
+error in the loop's own words (`arms: ...`, the line it prints and returns 2 on), and writes nothing: no
+ledger, no stream request, which is why `paper_loop --status` cannot stand in for it. The loop loads its
+config only inside the session, so the orchestrator asks this ahead of the open: its watchdog on any
+change to the file and once a day, and every save of `automations.json` on the candidate text before
+anything is written (`tests/test_configcheck.py`, each guard shown to fail).
+
 **The Builder's check** (`drafts.py`, `cli draft`, JSON on stdin). By name alone it returns the automation as an editor starts from it (the shipped entry with this machine's changes laid over it, before groups stamp anything). With an `automation`, it lays the edit over the config and resolves every automation again (`config.load_arms`), so a save is refused for exactly what would stop the loop, and returns the entry to write: off (`enabled: false`), named by its key, and with its `register` label kept as stored, never taken from the editor (a copy under a new name carries none, so its blocks read `not_backtested`). It writes nothing; the orchestrator's config editor writes the entry (`automationedit`).
 
 **Sizing** (`sizing.py`). A size is a count, a risk budget (`max_risk`), or a percent of an allocation

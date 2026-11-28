@@ -634,6 +634,36 @@ def coupled_warnings(old_doc: Any, new_doc: Any) -> list[tuple[str, str]]:
 # ---------------------------------------------------------------------------
 
 
+def module_load_refusal(cfg: dict[str, Any], target_id: str, new_text: str) -> dict[str, Any] | None:
+    """A refusal when the module that reads this target would refuse the candidate text, else None.
+
+    The automations loop loads its config on every tick and does not start when it will not load, so a
+    save that would stop it is refused here, before the backup and the write, with the module's own
+    message (`cli check --stdin`: the loop's own load, writing nothing). The candidate is what is
+    checked, so a save that fixes a broken file passes. Fails closed for a configured module the check
+    cannot reach; a suite without the module has no loop to stop and is not asked. Every write path
+    reaches this (`apply_field_edit`, `apply_raw_save`, so the Config page, the settings tool and the
+    Groups, Builder and retire saves alike)."""
+    if target_id != "automations" or "automations" not in (cfg.get("modules") or {}):
+        return None
+    from . import automationedit
+
+    answer = automationedit.run_candidate_check(cfg, new_text)
+    if not answer:
+        return {
+            "ok": False,
+            "code": "unavailable",
+            "error": "the automations module could not be asked about this config (is it installed?)",
+        }
+    if answer.get("ok") is True:
+        return None
+    return {
+        "ok": False,
+        "code": "invalid",
+        "error": f"the automations loop would refuse this config: {answer.get('error') or 'no reason given'}",
+    }
+
+
 def backup_dir() -> Path:
     return _home.state_dir() / "config-backups"
 
@@ -694,6 +724,9 @@ def apply_field_edit(
     errors = [msg for lvl, msg in issues if lvl == "error"]
     if errors:
         return {"ok": False, "issues": issues, "error": "; ".join(errors)}
+    refused = module_load_refusal(cfg, target_id, new_text)
+    if refused is not None:
+        return refused
 
     written = backup_and_write(path, new_text, target_id)
     return {"ok": True, "issues": issues, **written, "mtime": path.stat().st_mtime_ns}
@@ -741,6 +774,9 @@ def apply_raw_save(
 
     if new_text == path.read_text(encoding="utf-8"):
         return {"ok": True, "issues": issues, "unchanged": True, "mtime": path.stat().st_mtime_ns}
+    refused = module_load_refusal(cfg, target_id, new_text)
+    if refused is not None:
+        return refused
     written = backup_and_write(path, new_text, target_id)
     return {"ok": True, "issues": issues, **written, "mtime": path.stat().st_mtime_ns}
 

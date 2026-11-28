@@ -1904,6 +1904,88 @@ def _check_settlement(name: str, mcfg: dict[str, Any], now_et: datetime, is_trad
     return [Finding(f"{name}.settle_overdue", OK, f"{label} settlement", "settled or no open positions")]
 
 
+#: A module's config check where its `paper` block names none, so a home whose config predates the key is
+#: covered too. `"config_check_argv": []` turns it off.
+_CONFIG_CHECK_DEFAULTS: dict[str, list[str]] = {
+    "automations": ["-m", "cherrypick.automations.cli", "check"],
+}
+
+
+def _mtime_ns(path: Any) -> int | None:
+    try:
+        return Path(path).stat().st_mtime_ns if path else None
+    except OSError:
+        return None
+
+
+def _check_config_loads(name: str, mcfg: dict[str, Any], now_et: datetime) -> list[Finding]:
+    """Would the module's loop refuse its config? Said ahead of the session, not at its first tick.
+
+    2026-11-25 to 11-27: a group name left stale in the automations config made every tick of its loop
+    refuse, from the evening before, and the first alert came 45 minutes after the open, after two
+    arms' windows had closed. The loop loads its config only inside the session, so nothing else could.
+
+    Declared by `paper.config_check_argv` (automations has a default), a module command that loads
+    the config as the loop does and writes nothing (automations: `cli check`), answering `{ok}` or
+    `{ok: false, error, path}`. It runs on
+    any day at any hour, once for each change to the config file's mtime and once a new day (a group
+    `start` or a dated budget change can begin to apply on a later day); between those the answer is the
+    cached one, so a quiet tick costs two file stats. A refusal is a finding only, never a restart. When the
+    check gives no answer (it crashed, hung or printed nothing), nothing is said, and that no-answer is
+    kept for the day and the file's version so a hung check costs one run, not one a tick."""
+    paper = mcfg.get("paper") or {}
+    argv = paper["config_check_argv"] if "config_check_argv" in paper else _CONFIG_CHECK_DEFAULTS.get(name)
+    if not argv:
+        return []
+    label = name.upper() if len(name) <= 4 else name.capitalize()
+    state_path = cfgmod.state_file("config_check.json")
+    state = util.read_json(state_path) or {}
+    entry = state.get(name) if isinstance(state.get(name), dict) else {}
+    day = now_et.date().isoformat()
+
+    def fingerprint(path: Any) -> list[int | None]:
+        return [_mtime_ns(core_home.config_path(name)), _mtime_ns(path)]
+
+    result = entry.get("result") if isinstance(entry.get("result"), dict) else None
+    # An entry with no result is a run that gave no answer: kept for the day and the file's version,
+    # so a check that hangs or crashes costs one run, not one per tick.
+    if not (
+        entry
+        and entry.get("day") == day
+        and entry.get("fingerprint") == fingerprint(result.get("path") if result else None)
+    ):
+        try:
+            r = _run_module(cfgmod.module_root(mcfg, name), argv, timeout=30)
+            result = first_json(r.stdout) if r.returncode == 0 else None
+        except Exception:
+            result = None
+        if not isinstance(result, dict) or not isinstance(result.get("ok"), bool):
+            result = None
+        state[name] = {
+            "day": day,
+            "fingerprint": fingerprint(result.get("path") if result else None),
+            "result": result,
+        }
+        try:
+            util.atomic_write_json(state_path, state)
+        except Exception:
+            pass
+    if result is None:
+        return []
+    if result["ok"]:
+        return [Finding(f"{name}.config", OK, f"{label} config", "loads")]
+    where = cfgmod.portable_path(result["path"]) if result.get("path") else "its config"
+    return [
+        Finding(
+            f"{name}.config",
+            WARN,
+            f"{label} config refused",
+            f"The {name} loop would refuse {where}: {result.get('error') or 'no reason given'}. "
+            "It cannot start a session until the file loads.",
+        )
+    ]
+
+
 _TASK_STILL_RUNNING = 267009  # SCHED_S_TASK_RUNNING (0x41301) -- an in-progress tick, not a failure
 
 
@@ -3317,6 +3399,8 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
                 findings += _check_eval_activity(name, mcfg, now, in_session, ea_settings)
             elif kind == "cherrypick_scheduled":
                 findings += _check_earnings(name, mcfg, now, is_trading)
+            # Any kind, any day, any hour: a config the loop would refuse shows before it is needed.
+            findings += _check_config_loads(name, mcfg, now)
             # The live-loop check is kind-independent: any module may declare a `live` block.
             findings += _check_live(name, mcfg, now, in_session)
             # ...and once more for each further live account the module trades (`live_accounts`).

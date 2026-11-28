@@ -184,6 +184,21 @@ def load_module_config(
     every module's design document. `SystemExit` rather than an exception because every caller is a
     CLI entry point for which a traceback would be noise.
     """
+    found = module_config_source(module, pkg_root, path, env=env)
+    if found is None:
+        raise SystemExit("no config found — copy config.example.json to config.json")
+    with open(found, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def module_config_source(
+    module: str,
+    pkg_root: Path | str,
+    path: Path | str | None = None,
+    *,
+    env: str | None = None,
+) -> Path | None:
+    """The file `load_module_config` reads, by the same precedence, or None when there is none."""
     candidates = [
         path,
         os.environ.get(env or f"{module.upper()}_CONFIG"),
@@ -193,6 +208,5 @@ def load_module_config(
     ]
     for candidate in candidates:
         if candidate and os.path.isfile(candidate):
-            with open(candidate, encoding="utf-8") as handle:
-                return json.load(handle)
-    raise SystemExit("no config found — copy config.example.json to config.json")
+            return Path(candidate)
+    return None

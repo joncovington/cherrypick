@@ -153,6 +153,16 @@ and pushes alerts through `notify/notifier.py`, with a dedup / re-notify / recov
 (`members`: `jobs.failed`, `jobs.missed`, one id per job and stamp) is re-posted only when a new
 incident joins, never on the `renotify_minutes` clock, and posts one all-clear when the list empties.
 
+**Config loads** (`_check_config_loads`, finding `<module>.config`). A module that declares
+`paper.config_check_argv` (automations has it by default: `cli check`) is asked whether its loop would
+refuse its config, which the loop itself learns only inside the session. The command loads the config as
+the loop does and writes nothing (`paper_loop --status` opens the ledger and rewrites the stream request,
+so it cannot serve), and answers `{ok}` or `{ok: false, error, path}`. The watchdog runs it on any day at
+any hour, once for each change to the config file's mtime and once a new day (a group `start` or a dated
+budget change can begin to apply later), caching the answer in `state/config_check.json`, so a quiet tick
+is two file stats. A refusal is a WARN naming the file and the module's message, never a restart; a check
+that cannot run says nothing. `"config_check_argv": []` turns it off.
+
 **Recording coverage** (`_check_recording_coverage`). Once per finished session (15
 minutes after the calendar's close), the watchdog runs the gex recorder's `run.py coverage --session
 D` by subprocess and caches the verdict in `state/recording_coverage.json`. Each series with a gap
@@ -364,7 +374,12 @@ filename; override with `paper.sla_state_prefix`.
   (`module_switch_refusal`, old document against new, so any spelling of the change), refused
   (`not_flat`, or `status_unreadable`) unless every MEIC live account, the main one and each other
   login's, is flat and settled by `livearm.not_flat`: the switch removes the live jobs that manage a held
-  book. Only MEIC has that check; the ladder's status does not say whether it holds lots. On
+  book. Only MEIC has that check; the ladder's status does not say whether it holds lots. A third rule
+  binds the automations target (`module_load_refusal`): the candidate text goes to the module's
+  `cli check --stdin` first, and a config its loop would refuse is refused `invalid` with the module's
+  message, before the backup and the write, so the Config page, the settings tool and the Groups,
+  Builder and retire saves cannot leave a file the loop will not start on (a save that fixes one passes,
+  since the candidate is what is checked; a module that cannot be asked refuses `unavailable`). On
   `meic-risk`, the profile each MEIC live loop trades (`live.arm`, `live_accounts.<login>.arm`) is
   guarded whole but its `enabled`, which live does not read. A `save` edit at a
   pointer the file does not have is refused (`not_found`), with one exception: a single top-level key
