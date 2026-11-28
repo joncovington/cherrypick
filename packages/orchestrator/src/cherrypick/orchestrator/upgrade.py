@@ -39,6 +39,7 @@ broker, no process or task touched.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -414,6 +415,31 @@ def sibling_for(root: Path, tag: str) -> Path:
     return Path(root).resolve().parent / f"cherrypick-{tag}"
 
 
+def archive_checksum(manifest: dict[str, Any], tag: str) -> str | None:
+    """The SHA-256 the release workflow recorded for `tag`'s source ZIP, or None for a release whose
+    manifest predates it. A value that is present but not 64 hex digits is refused, not ignored."""
+    value = manifest["releases"][tag].get("archive_sha256")
+    if value is None:
+        return None
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", value):
+        raise Refused(f"{tag}'s manifest holds an archive_sha256 that is not a SHA-256; not downloading")
+    return value.lower()
+
+
+def verify_archive(zip_path: Path, expected: str) -> None:
+    """Refuse a downloaded ZIP whose SHA-256 is not `expected`, before anything is unzipped."""
+    digest = hashlib.sha256()
+    with open(zip_path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    if digest.hexdigest() != expected:
+        raise Refused(
+            f"the downloaded release ZIP does not match the checksum in its manifest "
+            f"(expected {expected[:12]}..., got {digest.hexdigest()[:12]}...); nothing was unzipped. "
+            "Try again, or install it by hand (docs/guide/upgrading.md)."
+        )
+
+
 def _safe_extract(zf: zipfile.ZipFile, dest: Path) -> None:
     base = dest.resolve()
     for name in zf.namelist():
@@ -583,6 +609,13 @@ def upgrade(cfg: dict[str, Any], opts: Options, ports: Ports, root: Path) -> Out
     for line in format_notes(rows):
         say(line)
     say("")
+    expected_sha = archive_checksum(manifest, target) if install.kind == "zip" else None
+    if install.kind == "zip" and expected_sha is None:
+        say(
+            f"WARNING: {target}'s manifest carries no checksum for its release ZIP (it predates "
+            "them), so the download cannot be verified. Continue only if you trust this network."
+        )
+        say("")
     if opts.dry_run:
         say("Dry run: nothing was changed.")
         out.ok = True
@@ -649,6 +682,8 @@ def upgrade(cfg: dict[str, Any], opts: Options, ports: Ports, root: Path) -> Out
             zip_path = Path(tmp) / f"{target}.zip"
             try:
                 ports.download(archive_url(target), zip_path)
+                if expected_sha:
+                    verify_archive(zip_path, expected_sha)
                 new_root = unzip_release(zip_path, sibling_for(install.root, target))
             except Exception as exc:  # noqa: BLE001
                 return fail("fetch", f"{type(exc).__name__}: {exc}")
