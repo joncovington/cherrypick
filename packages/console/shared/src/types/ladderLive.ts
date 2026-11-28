@@ -55,6 +55,9 @@ export interface LadderLiveStatus {
   error: string | null;
   /** `live` only when `live.dry_run` is exactly false. */
   mode: "dry-run" | "live" | null;
+  /** The status carried `dry_run` as a boolean. Without it `mode` is the module's own default reading, not
+   *  something the status said, and the Live > today chip reads unknown. */
+  dryRunStated?: boolean;
   note: string | null;
   today: string | null;
   ready: boolean | null;

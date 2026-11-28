@@ -39,6 +39,17 @@ export function pickCycle(status: WeeklyputStatus | undefined, entries: readonly
   return entries[0]?.expiration ?? null;
 }
 
+/**
+ * Why the module will not enter today, in plain words, or null when it has no refusal to state. The
+ * module's stored reason is never shown: a half day (early close) is "half day, not traded", and a
+ * reason this page has no words for says only that nothing is entered.
+ */
+export function entryRefusedWords(status: Pick<WeeklyputStatus, "halfDay" | "entryRefused"> | undefined): string | null {
+  if (status === undefined) return null;
+  if (status.halfDay || status.entryRefused === "half_day_no_entries") return "half day, not traded";
+  return status.entryRefused !== null ? "no entry today" : null;
+}
+
 export interface NameRow {
   symbol: string;
   /** pending, entered, missed, or "none" when the register has no row yet. */

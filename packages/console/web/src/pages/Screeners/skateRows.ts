@@ -19,6 +19,8 @@ export interface SkateView {
   pick: SkateLeg;
   /** The other band's read, for the quieter column. */
   other: SkateBandRead;
+  /** The file's `both_sides` flag for this band, as it stands: never worked out from the name's other side. */
+  bothSides: boolean;
 }
 
 export const otherBand = (b: SkateBand): SkateBand => (b === "fixed" ? "byExpiry" : "fixed");
@@ -27,7 +29,7 @@ export const otherBand = (b: SkateBand): SkateBand => (b === "fixed" ? "byExpiry
 function shown(row: SkateRow, band: SkateBand): SkateView | null {
   const read = row.bands[band];
   if (read.best === null || read.pick === null || !read.pick.hard) return null;
-  return { row, band, best: read.best, pick: read.pick, other: row.bands[otherBand(band)] };
+  return { row, band, best: read.best, pick: read.pick, other: row.bands[otherBand(band)], bothSides: row.bothSides[band] === true };
 }
 
 export function skateViews(rows: SkateRow[], side: SkateSide, band: SkateBand, passingOnly: boolean): SkateView[] {

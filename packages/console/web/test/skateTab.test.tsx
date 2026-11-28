@@ -54,8 +54,14 @@ function band(pick: Partial<SkateLeg> | null, vsMonthly: number | null = 1): Ska
   return { best: { expiry: l.expiry, strike: l.strike, perDayBid: l.perDayBid, skate: l.skate, monthly: "2026-11-20", vsMonthly }, pick: l };
 }
 
-function row(symbol: string, fixed: SkateBandRead, byExpiry: SkateBandRead, side: "C" | "P" = "C"): SkateRow {
-  return { symbol, side, spot: 100, fund: false, earnings: "2027-01-28", divYield: 0, stage: 2, monthly: "2026-11-20", bands: { fixed, byExpiry } };
+function row(
+  symbol: string,
+  fixed: SkateBandRead,
+  byExpiry: SkateBandRead,
+  side: "C" | "P" = "C",
+  bothSides: SkateRow["bothSides"] = { fixed: null, byExpiry: null },
+): SkateRow {
+  return { symbol, side, spot: 100, fund: false, earnings: "2027-01-28", divYield: 0, stage: 2, monthly: "2026-11-20", bands: { fixed, byExpiry }, bothSides };
 }
 
 const rows: SkateRow[] = [
@@ -160,6 +166,27 @@ describe("the skate tab", () => {
     expect(symbols(render("/screeners/skate?side=puts"))).toEqual(["PUTA"]);
     expect(symbols(render("/screeners/skate?band=by-expiry"))).toEqual(["LOW", "NONE", "HIGH"]);
     expect(symbols(render("/screeners/skate?passing=1"))).toEqual(["HIGH", "LOW", "NOGAP"]);
+  });
+
+  it("marks 'both sides' from the file's own flag, never from a sibling row's soft pass", () => {
+    // The file says MARKED is on both sides; no put row exists for it at all, so the tab cannot have worked it out.
+    // PLAIN passes every soft threshold on its call and has a passing put row, but the file does not flag it.
+    const flagged = [
+      row("MARKED", band({ gap: 0.05 }), band(null), "C", { fixed: true, byExpiry: false }),
+      row("PLAIN", band({ gap: 0.04 }), band(null), "C", { fixed: false, byExpiry: null }),
+      row("PLAIN", band({ gap: 0.04 }), band(null), "P", { fixed: false, byExpiry: null }),
+    ];
+    const html = render("/screeners/skate", { ...base, rows: flagged });
+    const cardOf = (sym: string) => html.split('class="pos-card tc-card"').find((c) => c.includes(`aria-label="${sym}: `)) ?? "";
+    expect(cardOf("MARKED")).toContain("both sides");
+    expect(cardOf("PLAIN")).not.toContain("both sides");
+    // The flag is per band: MARKED's by-expiry flag is false and that band shows no pick for it, so no card there.
+    expect(skateViews(flagged, "C", "fixed", false).map((v) => [v.row.symbol, v.bothSides])).toEqual([
+      ["MARKED", true],
+      ["PLAIN", false],
+    ]);
+    // A run that predates the field (null) is not a mark.
+    expect(skateViews([row("OLD", band({}), band(null))], "C", "fixed", false)[0]!.bothSides).toBe(false);
   });
 
   it("draws each name-side as a trade card, in cards by default, with the order that would open it", () => {

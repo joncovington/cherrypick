@@ -117,6 +117,14 @@ describe("our credit-spread list", () => {
     expect(render()).toContain("No setup entered on a recent close");
   });
 
+  it("hides leveraged funds only when asked: off by default, counted when on", () => {
+    payload = base([row({ symbol: "TQQQ", leveraged: "leveraged" }), row({ symbol: "AAA" })]);
+    expect(symbols(render())).toEqual(["AAA", "TQQQ"]);
+    const on = render("/screeners/credit-spreads?leveraged=hide");
+    expect(symbols(on)).toEqual(["AAA"]);
+    expect(on).toContain("1 leveraged hidden");
+  });
+
   it("marks a row from the 45-60 day fallback, and only that row", () => {
     payload = base([row({})]);
     expect(render()).not.toContain(">45-60<");

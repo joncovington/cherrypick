@@ -182,6 +182,8 @@ export interface CreditSpreadFilters {
   allTrades: boolean;
   pickedOnly: boolean;
   q: string;
+  /** Hide the declared leveraged, inverse and volatility funds (`leveraged` set). Off unless asked. */
+  hideLeveraged?: boolean;
 }
 
 /**
@@ -190,13 +192,14 @@ export interface CreditSpreadFilters {
  * the first. A row with no pick has no spread to judge for liquidity, so only "with a pick" hides it.
  */
 export function applyFilters(all: CreditSpreadRow[], f: CreditSpreadFilters) {
-  const hidden = { side: 0, inTrade: 0, thin: 0, unpicked: 0, unmatched: 0 };
+  const hidden = { side: 0, inTrade: 0, thin: 0, unpicked: 0, leveraged: 0, unmatched: 0 };
   const shown: CreditSpreadRow[] = [];
   for (const r of all) {
     if (f.side !== "both" && r.spread !== f.side) hidden.side += 1;
     else if (!f.allEarnings && r.earnings === "in-trade") hidden.inTrade += 1;
     else if (!f.allTrades && r.pick !== null && r.pick.passes === false) hidden.thin += 1;
     else if (f.pickedOnly && r.pick === null) hidden.unpicked += 1;
+    else if (f.hideLeveraged && r.leveraged !== null) hidden.leveraged += 1;
     else if (f.q !== "" && !r.symbol.includes(f.q)) hidden.unmatched += 1;
     else shown.push(r);
   }
@@ -382,15 +385,16 @@ export function CreditSpreadTab() {
   const allEarnings = params.get("earnings") === "all";
   const allTrades = params.get("trade") === "all";
   const pickedOnly = params.get("picked") === "only";
+  const hideLeveraged = params.get("leveraged") === "hide";
   const q = (params.get("q") ?? "").trim().toUpperCase();
 
   const selections = data?.rule.selections ?? [];
   const selection = selections.some((s) => s.id === params.get("selection")) ? (params.get("selection") as string) : DEFAULT_SELECTION;
   const current = selections.find((s) => s.id === selection);
   const all = useMemo(() => rowsFor(data?.rows ?? [], selection), [data, selection]);
-  const { shown, hidden } = applyFilters(all, { side, allEarnings, allTrades, pickedOnly, q });
+  const { shown, hidden } = applyFilters(all, { side, allEarnings, allTrades, pickedOnly, q, hideLeveraged });
   const sorted = sortRows(shown, CREDIT_SORTS.find((s) => s.id === sort.id), sort.reversed);
-  const { page, setOffset, setLimit } = usePage([data?.day, selection, side, allEarnings, allTrades, pickedOnly, q, sort.id, sort.reversed], 48);
+  const { page, setOffset, setLimit } = usePage([data?.day, selection, side, allEarnings, allTrades, pickedOnly, hideLeveraged, q, sort.id, sort.reversed], 48);
   const rows = sorted.slice(page.offset, page.offset + page.limit);
   const latest = data?.days[0] ?? null;
   const dropped = Object.entries(data?.dropped ?? {});
@@ -414,10 +418,10 @@ export function CreditSpreadTab() {
 
   const sortChanged = sort.id !== "symbol" || sort.reversed;
   const changed =
-    (sortChanged ? 1 : 0) + (selection !== DEFAULT_SELECTION ? 1 : 0) + (side !== "both" ? 1 : 0) + (allEarnings ? 1 : 0) + (allTrades ? 1 : 0) + (pickedOnly ? 1 : 0) + (q !== "" ? 1 : 0);
+    (sortChanged ? 1 : 0) + (selection !== DEFAULT_SELECTION ? 1 : 0) + (side !== "both" ? 1 : 0) + (allEarnings ? 1 : 0) + (allTrades ? 1 : 0) + (pickedOnly ? 1 : 0) + (hideLeveraged ? 1 : 0) + (q !== "" ? 1 : 0);
   const reset = () => {
     void setSort({ id: "symbol", reversed: false });
-    clear(["selection", "side", "earnings", "trade", "picked", "q"]);
+    clear(["selection", "side", "earnings", "trade", "picked", "leveraged", "q"]);
   };
   const sortLabel = CREDIT_SORTS.find((s) => s.id === sort.id)?.label ?? sort.id;
   const hiddenParts = [
@@ -425,6 +429,7 @@ export function CreditSpreadTab() {
     hidden.inTrade > 0 ? `${hidden.inTrade} with earnings in the trade` : "",
     hidden.thin > 0 ? `${hidden.thin} thin` : "",
     hidden.unpicked > 0 ? `${hidden.unpicked} with no ${shareLabel} width` : "",
+    hidden.leveraged > 0 ? `${hidden.leveraged} leveraged` : "",
     hidden.unmatched > 0 ? `${hidden.unmatched} not matching “${q}”` : "",
   ].filter(Boolean);
 
@@ -439,7 +444,7 @@ export function CreditSpreadTab() {
           view={{ value: view, onChange: setView }}
           filter={{
             changed,
-            parts: [current ? current.label : `${shareLabel} credit`, side === "both" ? "both sides" : side === "put" ? "put spreads" : "call spreads", `by ${sortLabel}${sort.reversed ? ", reversed" : ""}`],
+            parts: [current ? current.label : `${shareLabel} credit`, side === "both" ? "both sides" : side === "put" ? "put spreads" : "call spreads", `by ${sortLabel}${sort.reversed ? ", reversed" : ""}`, ...(hideLeveraged ? ["no leveraged funds"] : [])],
             note: `${shown.length} setups of ${all.length}${hiddenParts.length > 0 ? ` · ${hiddenParts.join(" · ")} hidden` : ""}`,
             onReset: reset,
             panel: (
@@ -484,6 +489,12 @@ export function CreditSpreadTab() {
                     description={`Show only names where some listed width gives ${shareLabel} of the width at the working price. Off by default: most names have none, and their widths say how near each comes.`}
                     on={pickedOnly}
                     onChange={(on) => set("picked", on ? "only" : null)}
+                  />
+                  <FilterSwitch
+                    label="Hide leveraged funds"
+                    description="Hide the declared leveraged, inverse and volatility funds. Off by default, so every row the list is judged on stays shown."
+                    on={hideLeveraged}
+                    onChange={(on) => set("leveraged", on ? "hide" : null)}
                   />
                 </FilterGroup>
                 <SortSection sorts={CREDIT_SORTS} choice={sort} fallback="symbol" onChange={setSort} />

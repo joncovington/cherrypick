@@ -473,7 +473,9 @@ board. Then the income lists: short puts, covered calls and credit spreads, one 
   tested edge" note above the table is never removed while the list shows: the rule is the least-bad
   cell of two studies that found no edge (`cherrypick.core.incomerules`). Defaults hide a thin option
   and a trade with earnings inside it, each with its escape; an unknown or past date stays shown,
-  marked.
+  marked. A **Hide leveraged funds** switch (`?leveraged=hide`, here and on the credit-spread tab) hides the
+  rows the file marks `leveraged`, `inverse` or `volatility`; it is off by default so every row the lists are
+  judged on stays shown, and the hidden count says how many it took.
 - **Credit spreads** (`CreditSpreadTab.tsx`, `readCreditSpreadList`): the chart setups'
   fresh entries as spreads, built by `technicals creditspreads.py`. A long setup is a put spread, its
   mirror a call spread, on the 30-45 day monthly. The short is nearest 0.40 delta and the pick is the
@@ -549,6 +551,10 @@ board. Then the income lists: short puts, covered calls and credit spreads, one 
   - **Hard filters hide, soft thresholds mark.** A row is the band's pick on its best expiry, shown
     only when the leg's `hard` is true; `soft.all` is a pass/miss chip, and "passing only" is the
     one way it narrows. Default order is history minus implied, widest first.
+  - **Both sides** is the file's own `both_sides` flag for the band (`technicals.skate.mark_both_sides`: the
+    name's best call and best put both pass every soft threshold), shown as a chip on the name's cards. The tab
+    reads it and never works it out from the sibling row (`skateTab.test.tsx` fails if it does); a run without
+    the field (an older one) shows no chip.
   - **The band selector** (fixed / by expiry) drives the rows and the ranking; the other band's
     best strike and premium a day sit in a quieter column ("same" where both pick one strike).
   - **Stated, never empty:** no run, an unreadable run, an incomplete run and the run's `problem`
@@ -989,7 +995,14 @@ attention. A losing loop's card has a red edge, a tripped breaker or failed read
 trades are a card of their own beside the loops (never in the total) with their orders card below, shown
 only for an account that has something to say (`handHasContent`: trades, a warning, or a view that could
 not be read; an empty day has no section); a retired loop (module off, holding nothing) has no card and
-no line. Header badge: `2 armed · HALTED`. It **composes** the
+no line. Beside the armed chip, MEIC's and the ladder's cards carry a **dry-run chip**, shown whether or not the loop
+is armed: `dry run` (no entry is sent), `live` (amber: entries are sent) or `unknown` when the loop's status could
+not be read, which is never shown as dry run. It is the loop's own `--status` answer (MEIC's `dry_run`, per login; the
+ladder's `mode`), read by the route through the same memoised bridges as the arm switch
+(`dryRunOfMeic`, `dryRunOfLadder`), never derived from the config here; a status that omits `dry_run` is `unknown`.
+Its ? (`DryRunChip.tsx`) says in plain words what a dry run is, that a held position is still managed, that
+`live.dry_run` changes by hand in the module's config and never from the console, and what the other states mean.
+Flies and bwb have no such setting and no chip. Header badge: `2 armed · HALTED`. It **composes** the
 per-loop readers (`fliesLive`/`flies`, `readMeicLive`, `readBwb`/`readBwbHistory` in live mode,
 `liveBooks`' bwb read for absent-vs-failed, `readLadderLive` for the ladder) and adds only each loop's own `daily_loss_tripped` and
 flies' `overdue_settlement` queries, mirrored and named. Attention: orphaned orders, held
