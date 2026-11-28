@@ -128,8 +128,9 @@ def _store_token(token: str) -> None:
 
 
 def _mask(token: str) -> str:
-    """A safe-to-print fingerprint of a stored token (never echo the whole secret)."""
-    return f"{token[:4]}..{token[-4:]} ({len(token)} chars)" if token and len(token) > 8 else "****"
+    """A safe-to-print fingerprint of a stored token: its length and last two characters, and for
+    a token under 24 characters nothing but ``****`` (a short secret loses too much to any suffix)."""
+    return f"..{token[-2:]} ({len(token)} chars)" if token and len(token) >= 24 else "****"
 
 
 def request_code(email: str) -> dict:

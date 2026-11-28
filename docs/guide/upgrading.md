@@ -29,7 +29,9 @@ in the script (`run.py upgrade`); the slash command only explains and calls it.
    folder and commit, the target, the backup and the time.
 4. **Fetches the release.** A git checkout fetches the tags. A ZIP install downloads the release and
    unzips it into a **new folder** next to the old one (`cherrypick-v0.13.0`); the old folder is never
-   written to.
+   written to. The download is checked against the SHA-256 in the release's manifest before anything is
+   unzipped, and a mismatch stops the upgrade. A release whose manifest has no checksum (one published
+   before they existed) shows a warning with its notes, and the upgrade goes on if you confirm.
 5. **Stops the suite**, the way `uninstall.cmd` and `run.py stop --all` do.
 6. **Installs the new release**: for a git checkout it checks out the tag, then runs the new release's
    own installer in its upgrade mode, which keeps your settings and asks nothing a first install asks (no Dolt

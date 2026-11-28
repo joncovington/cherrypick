@@ -444,8 +444,9 @@ filename; override with `paper.sla_state_prefix`.
   measured against nothing; only when the module's own `live_loop --status` says flat and settled (not
   armed today, no position, no working order, settled, nothing overdue, held or orphaned, no entry
   sent and unreconciled, ledger readable; a status it cannot read refuses, and so does a config that
-  changed while it was read); journaled first through `core.live.record_event`, a
-  journal that cannot be written stopping it; and only that key changes (the new text must parse to the
+  changed while it was read); journaled first through `core.live.record_event` as
+  `live_arm_change_attempted`, a journal that cannot be written stopping it, then `live_arm_changed`
+  only once the write landed (`live_arm_change_failed` when it did not); and only that key changes (the new text must parse to the
   old document with that one value moved, or nothing is written). It takes effect at the next arming and
   arms nothing. MEIC's main login only: another login's arm sits under the guarded `/live_accounts`,
   and the ladder's status does not say whether it holds lots. `tests/test_livearm.py` shows each refusal

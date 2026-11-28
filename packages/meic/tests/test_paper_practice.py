@@ -423,3 +423,13 @@ def test_finalize_ic_settles_itm_call_at_intrinsic():
     # call exit = min(7546-7540, wing 5) = 5 ; put OTM = 0 -> pnl = (1.40 - 5 - 0)*100
     assert pnl == round((1.40 - 5.0 - 0.0) * 100, 2)  # -360.0 (near max loss on the ITM side)
     assert status == "expired"
+
+
+def test_token_mask_shows_at_most_two_characters_and_none_when_short():
+    from cherrypick.meic import paper_replay
+
+    token = "abcd" + "x" * 20 + "wxyz"
+    shown = paper_replay._mask(token)
+    assert token[:4] not in shown and token[-4:] not in shown and shown.endswith("(28 chars)")
+    assert paper_replay._mask("short-token-123456") == "****"
+    assert paper_replay._mask("") == "****"

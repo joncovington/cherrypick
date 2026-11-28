@@ -90,7 +90,12 @@ final text before the tag is cut, usually in the changelog PR.
    missing, undated or empty), refuses a tag with no well-formed entry in the manifest
    ([`tools/check_release_manifest.py`](../tools/check_release_manifest.py)), then creates the GitHub
    Release with the section as its notes and the manifest attached as `release-manifest.json`, which
-   `upgrade` reads from the release page. GitHub attaches the source ZIP and tarball itself.
+   `upgrade` reads from the release page. GitHub attaches the source ZIP and tarball itself. The
+   attached manifest differs from `release/manifest.json` by one field: the tag's entry gains
+   `archive_sha256`, the SHA-256 of the source ZIP GitHub serves for the tag
+   ([`tools/release_checksum.py`](../tools/release_checksum.py) computes it at publish time, since the
+   archive does not exist before the tag). A ZIP `upgrade` refuses to unzip a download that does not
+   match; a release published without the field only gets a warning.
 6. **Check the result**: the release is at the top of the Releases page with its notes, and
    `/releases/latest` opens it.
 

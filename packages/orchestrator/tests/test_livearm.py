@@ -254,3 +254,24 @@ def test_the_console_bridge_reaches_the_op_and_its_refusals_are_data(home, monke
     out = configcli.handle({"op": "set_live_arm", "module": "meic", "arm": "pm-1400"})
     assert out["ok"] is False and out["code"] == "confirm_required"
     assert _text(home) == MEIC
+
+
+def test_a_failed_config_write_leaves_a_journal_that_never_says_the_arm_changed(home, monkeypatch):
+    def boom(path, text, target):
+        raise PermissionError("locked")
+
+    monkeypatch.setattr(configedit, "backup_and_write", boom)
+    out = livearm.set_live_arm({}, _req(), _flat())
+    assert out["ok"] is False and out["code"] == "write_failed"
+    assert _text(home) == MEIC
+    events = [r["event"] for r in _live.arm_events("meic")]
+    assert "live_arm_changed" not in events
+    assert events == ["live_arm_change_attempted", "live_arm_change_failed"]
+
+
+def test_a_landed_change_is_journaled_as_attempted_then_changed(home):
+    livearm.set_live_arm({}, _req(), _flat())
+    assert [r["event"] for r in _live.arm_events("meic")] == [
+        "live_arm_change_attempted",
+        "live_arm_changed",
+    ]

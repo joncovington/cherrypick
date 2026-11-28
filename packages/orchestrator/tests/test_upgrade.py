@@ -688,3 +688,39 @@ def test_restoring_over_a_sqlite_file_drops_the_newer_databases_sidecars(world):
     assert backup.restore_over_home(backup.latest_path({}))["ok"]
     assert not (world.home / "data" / "ledger.db-wal").exists()
     assert sqlite3.connect(db).execute("select count(*) from t").fetchone()[0] == 1
+
+
+# --------------------------------------------------------------------------- the release checksum
+def _pin(monkeypatch, value):
+    monkeypatch.setitem(MANIFEST["releases"]["v0.13.0"], "archive_sha256", value)
+
+
+def test_a_zip_matching_the_manifest_checksum_is_unzipped(world, monkeypatch):
+    import hashlib
+
+    _pin(monkeypatch, hashlib.sha256(release_zip()).hexdigest())
+    out = world.upgrade()
+    assert out.ok, out.refusals
+    assert not any("WARNING" in s for s in world.said)
+    assert (world.tmp / "cherrypick-v0.13.0" / "install.ps1").is_file()
+
+
+def test_a_zip_that_does_not_match_the_manifest_checksum_is_never_unzipped(world, monkeypatch):
+    _pin(monkeypatch, "0" * 64)
+    out = world.upgrade()
+    assert not out.ok
+    assert any("does not match the checksum" in r for r in out.refusals)
+    assert not (world.tmp / "cherrypick-v0.13.0").exists()
+    assert not list(world.tmp.glob(".*.partial"))
+
+
+def test_a_checksum_that_is_not_a_sha256_is_refused_before_any_download(world, monkeypatch):
+    _pin(monkeypatch, "abc")
+    assert any("not a SHA-256" in r for r in refusal(world))
+    assert not world.acted()
+
+
+def test_a_manifest_without_a_checksum_warns_loudly_and_proceeds(world):
+    out = world.upgrade()
+    assert out.ok, out.refusals
+    assert any(s.startswith("WARNING") and "checksum" in s for s in world.said)
