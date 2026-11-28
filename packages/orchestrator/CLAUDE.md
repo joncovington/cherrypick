@@ -446,7 +446,16 @@ filename; override with `paper.sla_state_prefix`.
   module's keyring via `cherrypick.core.auth.CredentialStore` (service from `keyring_service`). It
   never places/cancels/closes/adjusts an order, flips `enable_live_trading`, runs a live engine, or
   edits a module's code or config. Account writes are human-confirmed; only the keyring write sees the
-  full number.
+  full number. **`account --set` and `--clear` refuse, in `accounts.py`, so every caller gets it
+  (console onboarding and `connect` too), while a live loop the designation reaches is armed today or
+  holds a position or working order.** No override. A module's own designation is judged by that
+  module's `live_loop --status`; a login's by `--status --login`; the suite-wide one by every live
+  module that inherits it (one with no designation of its own). "Armed" is the arm record or the
+  status's own armed field, and "holds" is its open positions (the ladder's `open_lots`) and working
+  orders, an unresolved broker submission or an orphaned order. MEIC's main account manages its book
+  unarmed, so armed alone is not the test. A status that cannot be read, or that does not say what the
+  book holds, refuses: unknown is not flat. The refusal names the module and the reason, the account
+  masked, and the command exits 1.
 - **A resident job's liveness is PUBLISHED by the job, never inferred from its log.** `silence_file`
   is a heartbeat the job writes each tick (`cfgmod.resident_heartbeat_path` → `state/<name>.heartbeat`,
   convention owned by `cherrypick.core.home.heartbeat_path`). **Never point a `silence_file` at a log**

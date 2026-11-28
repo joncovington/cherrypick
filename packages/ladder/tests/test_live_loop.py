@@ -199,6 +199,42 @@ def test_status_with_the_example_as_shipped_is_not_ready(capsys, suite):
     assert {"live.enabled", "live.gate0_confirmed"} <= set(status["unmet_gates"])
 
 
+def _status_book(capsys, write_config) -> tuple:
+    _, out = run(capsys, "--config", write_config(live_config()), "--status")
+    status = json.loads(out)
+    return status["open_lots"], status["working_orders"]
+
+
+def test_status_counts_the_lots_and_working_orders_the_live_ledger_holds(capsys, suite, write_config):
+    """The orchestrator refuses to change the designated account while this book is not empty."""
+    from cherrypick.ladder import live_db
+
+    assert _status_book(capsys, write_config) == (0, 0)  # no ledger yet: nothing held
+    conn = live_db.connect()
+    conn.execute(
+        "INSERT INTO ladder_positions (position_id, arm, symbol, entry_rule, target_rule, quantity, "
+        "buy_level, buy_price, buy_session, buy_time, status, entry_value) "
+        "VALUES ('a:TQQQ:2026-11-20:1', 'a', 'TQQQ', 'once', 'fixed', 10, 50, 50, '2026-11-20', "
+        "'2026-11-20T10:00:00-05:00', 'open', -500)"
+    )
+    conn.commit()
+    assert _status_book(capsys, write_config) == (1, 0)
+    live_db.save_order(
+        conn,
+        {"client_id": "ldr.s.1", "side": "sell", "symbol": "TQQQ", "shares": 10, "limit_price": 55.0},
+    )
+    conn.commit()
+    conn.close()
+    assert _status_book(capsys, write_config) == (1, 1)
+
+
+def test_status_says_unknown_when_the_live_ledger_cannot_be_read(capsys, suite, write_config):
+    path = pathlib.Path(live_loop.live_db.live_db_path())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"this is not a database")
+    assert _status_book(capsys, write_config) == (None, None)
+
+
 def test_status_without_an_account_names_the_gate(capsys, suite, write_config, monkeypatch):
     monkeypatch.setattr(live_loop, "_designated", lambda: None)
     _, out = run(capsys, "--config", write_config(live_config()), "--status")

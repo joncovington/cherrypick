@@ -16,17 +16,134 @@ write the keyring value the module itself will read.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
 from cherrypick.core import home as _home
+from cherrypick.core import live as _live
 from cherrypick.core.auth import ACCOUNT_NUMBER, SHARED_SERVICE, CredentialError, CredentialStore
 
 from . import config as cfgmod
+from . import doctor, timeutil
 from .reconcile import _tt  # module tt.py invocation (doctor._run + first_json), reused
-from .util import mask_account, read_json
+from .util import first_json, mask_account, read_json
 
 PAPER_ONLY_REFUSAL = "{module} is paper-only since v0.12.0; it needs no trading account."
+
+STATUS_TIMEOUT_S = 60
+
+
+# --------------------------------------------------------------------------- the live-book guard
+def module_status(cfg: dict[str, Any], module: str, login: str | None = None) -> dict[str, Any] | None:
+    """The module's own `live_loop --status` JSON (files and the ledger, never the broker), or None
+    when it cannot be run or does not answer `ok`. `login` reads another broker login's live
+    account, as that account's own live job runs it. The orchestrator drives modules by subprocess."""
+    mcfg = (cfg.get("modules") or {}).get(module) or {}
+    try:
+        r = doctor._run(
+            cfgmod.module_root(mcfg, module),
+            ["-m", f"cherrypick.{module}.live_loop", "--status", *cfgmod.login_argv(login)],
+            timeout=STATUS_TIMEOUT_S,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    payload = first_json(r.stdout)
+    if not isinstance(payload, dict) or not payload or payload.get("ok") is False:
+        return None
+    return payload
+
+
+def _count(status: dict[str, Any], *keys: str) -> int | None:
+    """The first of `keys` the status carries, as a count (a list counts its length); None when none
+    is there or it is null: unknown is not zero."""
+    for key in keys:
+        if key in status:
+            value = status[key]
+            if value is None:
+                return None
+            return len(value) if isinstance(value, (list, tuple, dict)) else int(value)
+    return None
+
+
+def book_reasons(status: dict[str, Any], record_date: str | None, today: str) -> list[str]:
+    """Why a live account's designation may not change now, in words; empty when it is not armed
+    today and holds no position and no working order. Every field is the module's own answer, and a
+    missing one counts against: unknown is not empty."""
+    out: list[str] = []
+    if today in (record_date, status.get("armed_for")) or status.get("armed_today") is True:
+        out.append("its live loop is armed for today")
+    if status.get("ledger_unreadable"):
+        out.append("its live ledger cannot be read")
+    positions = _count(status, "open_positions", "open_lots")
+    if positions is None:
+        out.append("whether it holds a position is not known")
+    elif positions:
+        out.append(f"it holds {positions} open position(s)")
+    working = _count(status, "pending_orders", "working_orders")
+    if working is None:
+        out.append("whether it has a working order is not known")
+    elif working:
+        out.append(f"it has {working} working order(s)")
+    if status.get("entry_intents"):
+        out.append("an entry was sent and is not yet reconciled with the broker")
+    if status.get("orphaned_orders"):
+        out.append("working orders at the broker are not in its ledger")
+    held = status.get("broker_held", status.get("held")) or {}
+    if isinstance(held, dict) and (held.get("unresolved") or held.get("unrecorded")):
+        out.append("a broker submission is unresolved or unrecorded")
+    return out
+
+
+def live_book_refusal(
+    cfg: dict[str, Any], targets: list[tuple[str, str | None]], designated: str | None
+) -> dict[str, Any] | None:
+    """A refusal when any of `targets` (module, login-or-None) has its live loop armed today or holds
+    a position or working order, or None when every one is clear (#1513). A module with no live loop
+    or no checkout has no book and is skipped. A status that cannot be read refuses: unknown is not
+    flat. `designated` is the account being changed, masked in the message."""
+    today = timeutil.now_et().date().isoformat()
+    blockers: list[str] = []
+    for module, login in targets:
+        mcfg = (cfg.get("modules") or {}).get(module)
+        if not mcfg or not cfgmod.has_live_path(module) or not cfgmod.module_root(mcfg, module).exists():
+            continue
+        where = module if login is None else f"{module} on login {login}"
+        status = module_status(cfg, module, login)
+        if status is None:
+            blockers.append(
+                f"{where}: its live status cannot be read, so whether it holds a book is not known"
+            )
+            continue
+        key = module if login is None else f"{module}.{login}"
+        blockers += [f"{where}: {why}" for why in book_reasons(status, _live.arm_record_date(key), today)]
+    if not blockers:
+        return None
+    account = f" ({mask_account(designated)})" if designated else ""
+    return {
+        "ok": False,
+        "error": f"the designated account{account} is left as it is: "
+        + "; ".join(blockers)
+        + ". Change it when the loop is disarmed and the book is flat.",
+        "blockers": blockers,
+    }
+
+
+def _inheriting_modules(cfg: dict[str, Any]) -> list[str]:
+    """The live-path modules that read the shared designation through: those with no designation of
+    their own. A module whose own entry cannot be read counts as inheriting."""
+    out = []
+    for name, mcfg in (cfg.get("modules") or {}).items():
+        service = cfgmod.module_keyring_service(mcfg, name) if cfgmod.has_live_path(name) else None
+        if not service:
+            continue
+        try:
+            own = CredentialStore(service).get_secret(ACCOUNT_NUMBER)
+        except CredentialError:
+            own = None
+        if not own:
+            out.append(name)
+    return out
 
 
 def keyring_store(cfg: dict[str, Any], module: str) -> CredentialStore | None:
@@ -191,7 +308,14 @@ def list_shared(cfg: dict[str, Any]) -> dict[str, Any]:
 def set_shared_account(cfg: dict[str, Any], selector: str) -> dict[str, Any]:
     """Designate the SUITE-WIDE default live-trading account (the shared service's
     account_number). Every module without its own designation inherits it; a per-module
-    `account --module X --set` still overrides. Caller is responsible for human confirmation."""
+    `account --module X --set` still overrides. Caller is responsible for human confirmation.
+    Refused, writing nothing, while any module that inherits it has its live loop armed today or
+    holds a position or working order."""
+    refusal = live_book_refusal(
+        cfg, [(m, None) for m in _inheriting_modules(cfg)], _designated_number(_shared_store())
+    )
+    if refusal:
+        return refusal
     name, _mcfg, root, tool = _first_broker_module(cfg)
     if root is None:
         return {"ok": False, "error": _NO_BROKER_MODULE}
@@ -232,6 +356,11 @@ def set_login_account(cfg: dict[str, Any], module: str, login: str, selector: st
     doc = read_json(_home.config_path(module))
     if login not in (doc.get("live_accounts") or {}):
         return {"ok": False, "error": f"{module}'s config has no live_accounts.{login} entry"}
+    refusal = live_book_refusal(
+        cfg, [(module, login)], _designated_number(login_designation_store(login, module))
+    )
+    if refusal:
+        return refusal
     name, _mcfg, root, tool = _first_broker_module(cfg)
     if root is None:
         return {"ok": False, "error": _NO_BROKER_MODULE}
@@ -248,7 +377,14 @@ def set_login_account(cfg: dict[str, Any], module: str, login: str, selector: st
     return {"ok": True, "module": module, "login": login, "designated": mask_account(full)}
 
 
-def clear_login_account(module: str, login: str) -> dict[str, Any]:
+def clear_login_account(cfg: dict[str, Any], module: str, login: str) -> dict[str, Any]:
+    """Unset the account `module` trades on another login; refused like the set while that account
+    is armed today or holds a position or working order."""
+    refusal = live_book_refusal(
+        cfg, [(module, login)], _designated_number(login_designation_store(login, module))
+    )
+    if refusal:
+        return refusal
     try:
         login_designation_store(login, module).delete_secret(ACCOUNT_NUMBER)
     except CredentialError as exc:
@@ -319,7 +455,14 @@ def logins_status(cfg: dict[str, Any], store_factory=None) -> list[dict[str, Any
     return out
 
 
-def clear_shared_account() -> dict[str, Any]:
+def clear_shared_account(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Unset the suite-wide designation; refused like the set while any module that inherits it is
+    armed today or holds a position or working order."""
+    refusal = live_book_refusal(
+        cfg, [(m, None) for m in _inheriting_modules(cfg)], _designated_number(_shared_store())
+    )
+    if refusal:
+        return refusal
     _shared_store().delete_secret(ACCOUNT_NUMBER)
     return {"ok": True, "scope": "shared", "designated": None}
 
@@ -408,6 +551,9 @@ def set_account(cfg: dict[str, Any], module: str, selector: str) -> dict[str, An
     _mcfg, root, store, err = _context(cfg, module)
     if err:
         return err
+    refusal = live_book_refusal(cfg, [(module, None)], _designated_number(store))
+    if refusal:
+        return refusal
     accounts, aerr = _broker_accounts(root, cfgmod.broker_tool(_mcfg or {}, module))
     if aerr:
         return {"ok": False, "error": aerr}
@@ -425,10 +571,14 @@ def set_account(cfg: dict[str, Any], module: str, selector: str) -> dict[str, An
 
 
 def clear_account(cfg: dict[str, Any], module: str) -> dict[str, Any]:
-    """Unset the module's designated account (revert to the SDK's default account discovery)."""
+    """Unset the module's designated account (revert to the SDK's default account discovery).
+    Refused, writing nothing, while its live loop is armed today or it holds a position or working order."""
     _mcfg, _root, store, err = _context(cfg, module)
     if err:
         return err
+    refusal = live_book_refusal(cfg, [(module, None)], _designated_number(store))
+    if refusal:
+        return refusal
     try:
         store.delete_secret(ACCOUNT_NUMBER)
     except CredentialError as exc:

@@ -1759,6 +1759,13 @@ def _account_table(listing: dict) -> None:
         print(f"  {i}) {'  '.join(bits)}{mark}")
 
 
+def _exit_unless_ok(result: dict) -> None:
+    """Print a result; exit non-zero on a refusal, so a script sees a change that did not happen."""
+    _emit(result)
+    if not result.get("ok"):
+        sys.exit(1)
+
+
 def cmd_account(cfg, args) -> None:
     """List / set / clear a designated live-trading account (masked). With --module, the
     module's own designation (its override); WITHOUT --module, the SUITE-WIDE shared default
@@ -1770,7 +1777,7 @@ def cmd_account(cfg, args) -> None:
         # A module's live account on another login (its config's `live_accounts.<login>`): designate,
         # clear, or (no --module) list the login's accounts.
         if module and args.clear:
-            _emit(accounts.clear_login_account(module, login))
+            _exit_unless_ok(accounts.clear_login_account(cfg, module, login))
             return
         if module and args.set:
             if not args.yes:
@@ -1796,7 +1803,7 @@ def cmd_account(cfg, args) -> None:
         return
     if not module:
         if args.clear:
-            _emit(accounts.clear_shared_account())
+            _exit_unless_ok(accounts.clear_shared_account(cfg))
             return
         if args.set:
             # Setting the destination for LIVE orders — human-confirmed unless --yes.
@@ -1814,12 +1821,12 @@ def cmd_account(cfg, args) -> None:
                 ):
                     _emit({"ok": False, "error": "aborted"})
                     sys.exit(1)
-            _emit(accounts.set_shared_account(cfg, args.set))
+            _exit_unless_ok(accounts.set_shared_account(cfg, args.set))
             return
         _emit(accounts.list_shared(cfg))
         return
     if args.clear:
-        _emit(accounts.clear_account(cfg, module))
+        _exit_unless_ok(accounts.clear_account(cfg, module))
         return
     if args.set:
         if module in cfgmod.PAPER_ONLY_MODULES:
@@ -1839,7 +1846,7 @@ def cmd_account(cfg, args) -> None:
             ):
                 _emit({"ok": False, "error": "aborted"})
                 return
-        _emit(accounts.set_account(cfg, module, args.set))
+        _exit_unless_ok(accounts.set_account(cfg, module, args.set))
         return
     _account_table(accounts.list_accounts(cfg, module))
 

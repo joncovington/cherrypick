@@ -13,6 +13,14 @@ beyond the latest release.
 
 ### What's new
 
+- **`account --set` and `--clear` refuse while a live loop is armed or holds a book.** The designated
+  account cannot change under a live loop that is armed for today, or under one that holds a position or
+  a working order (MEIC's main account manages its book even when it is not armed). The refusal is in
+  the orchestrator's account code, so the console's account step and `connect` get it too; there is no
+  override, and a status that cannot be read refuses. The suite-wide account is checked against every
+  module that inherits it, a second login's against that login alone. The command exits 1 and names the
+  module and the reason. The ladder's `--status` now reports `open_lots` and `working_orders`.
+  Nothing to do.
 - **A chain fetch no longer asks the vendor for a day that is not a trading session, and the store's
   quality report lists any such day it holds.** The vendor answers a Saturday with a placeholder market
   (every option bid 0.05, ask 99.00), which a study read as a session. `fetch-chains` counts these
