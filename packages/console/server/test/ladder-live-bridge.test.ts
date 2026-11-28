@@ -168,7 +168,7 @@ function moduleStatus(): Record<string, unknown> | null {
 const theirs = moduleStatus();
 
 describe.skipIf(theirs === null)("the bridge reads what the module itself prints", () => {
-  it("shapes the nine gates and a verdict, and never arms anything", () => {
+  it("shapes the ten gates and a verdict, and never arms anything", () => {
     const s = shapeStatus({ ok: true, json: theirs, error: null });
     expect(s.ok, s.error ?? "").toBe(true);
     expect(s.gates.map((g) => g.name)).toEqual([
@@ -178,6 +178,7 @@ describe.skipIf(theirs === null)("the bridge reads what the module itself prints
       "arm.record",
       "account.designated",
       "halt.flag",
+      "session.half_day",
       "live.arm",
       "live.symbols",
       "live.limits",

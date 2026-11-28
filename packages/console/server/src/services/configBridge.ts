@@ -51,7 +51,7 @@ export type BridgeRequest =
   | { op: "load"; target: string }
   | { op: "save"; target: string; expected_mtime?: number | null; edits: Array<{ pointer: string; value: unknown }> }
   | { op: "halt_status" }
-  | { op: "set_halt"; present: boolean }
+  | { op: "set_halt"; present: boolean; confirm?: string }
   | { op: "live_arm_options" }
   | { op: "set_live_arm"; module: "meic"; arm: string; confirm: string }
   | { op: "features" }

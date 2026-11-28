@@ -68,7 +68,7 @@ function GateCard({ status }: { status: LadderLiveStatus | undefined }) {
   const gates = status?.gates ?? [];
   return (
     <DataCard
-      title="the nine gates"
+      title="the live gates"
       className="lv-12"
       headers={["gate", "state", "what a failure stops", "why"]}
       loading={status === undefined}

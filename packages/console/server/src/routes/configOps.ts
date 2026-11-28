@@ -137,14 +137,16 @@ export function registerConfigRoutes(app: FastifyInstance, config: ConsoleConfig
       return reply.code(400).send({ error: "present (boolean) required" });
     }
     // Clearing the halt is the direction that lets live entries resume, so it carries the same
-    // shape of deliberate confirmation the suite's arming rituals use. Setting it never does.
+    // shape of deliberate confirmation the suite's arming rituals use. Setting it never does. The
+    // orchestrator's `liveops.set_halt` checks the phrase again, so it is passed through.
     if (present === false && body["confirm"] !== RESUME_CONFIRMATION) {
       return reply.code(400).send({
         error: `clearing the halt needs confirm: "${RESUME_CONFIRMATION}"`,
         code: "confirm_required",
       });
     }
-    if (sendBridgeFailure(reply, await callConfigCli({ op: "set_halt", present })) === null) return reply;
+    const op = present ? { op: "set_halt" as const, present } : { op: "set_halt" as const, present, confirm: RESUME_CONFIRMATION };
+    if (sendBridgeFailure(reply, await callConfigCli(op)) === null) return reply;
     invalidateFeatures();
     app.log.info(`halt flag ${present ? "set" : "cleared"} from the console config page`);
     return readLockStatus(config);

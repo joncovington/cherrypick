@@ -62,12 +62,25 @@ def halt_status(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     }
 
 
-def set_halt(present: bool) -> dict[str, Any]:
+RESUME_CONFIRMATION = "RESUME LIVE"
+
+
+def set_halt(present: bool, confirm: str | None = None) -> dict[str, Any]:
     """Create or delete the suite halt flag — a human action, not an automated one (see module
     docstring): a click here is the same category of action as `/live-flies-start --stop`'s halt
     path or a manual `touch`/`del` of the file, just reachable from the settings surface. Touches
     only this one file — never `enable_live_trading`, never a module's config or code, never an
-    order. Idempotent either way."""
+    order. Idempotent either way.
+
+    Setting the flag is one call on purpose: a stop that asks twice arrives late. Clearing it lets
+    live entries resume, so it needs `confirm` to be the typed `RESUME LIVE`, checked here so every
+    caller (the settings tool, the console's bridge) is held to it, not only the browser in front."""
+    if not present and confirm != RESUME_CONFIRMATION:
+        return {
+            "ok": False,
+            "error": f'clearing the halt needs confirm: "{RESUME_CONFIRMATION}"',
+            "code": "confirm_required",
+        }
     path = halt_flag_path()
     if present:
         path.parent.mkdir(parents=True, exist_ok=True)
