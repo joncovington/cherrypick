@@ -23,6 +23,7 @@ ORCH = {
         "gex": {"enabled": True, "path": "../gex"},
     },
     "watchdog": {"interval_minutes": 10},
+    "streamer": {"instances": []},
     "broker": {"logins": {"main": {"label": "Main", "keyring_service": "cherrypick-broker"}}},
     "supervisor": {"argv": ["run.py", "supervise"]},
 }
@@ -70,14 +71,29 @@ def home(tmp_path, monkeypatch):
     return tmp_path
 
 
-def save(home, target, pointer, value, status_fn=None):
-    files = {"orchestrator": home / "config.json", "meic": home / "config" / "meic.json",
-             "meic-risk": home / "config" / "meic.risk.json"}  # fmt: skip
-    before = files[target].read_text(encoding="utf-8")
-    req = {"op": "save", "target": target, "edits": [{"pointer": pointer, "value": value}]}
-    out = configcli._op_save(dict(ORCH), req, status_fn=status_fn or _never)
+FILES = {"orchestrator": "config.json", "meic": "config/meic.json", "meic-risk": "config/meic.risk.json"}
+
+
+def save(home, target, pointer, value, status_fn=None, path="console"):
+    """One edit through a write path: the console's save (`configcli`), or the settings tool's field
+    edit or raw save (`configedit`), with `status_fn` standing in for MEIC's live status."""
+    file = home / FILES[target]
+    before = file.read_text(encoding="utf-8")
+    saved = livearm.run_module_status
+    livearm.run_module_status = status_fn or _never
+    try:
+        if path == "console":
+            req = {"op": "save", "target": target, "edits": [{"pointer": pointer, "value": value}]}
+            out = configcli._op_save(dict(ORCH), req)
+        elif path == "field":
+            out = configedit.apply_field_edit(dict(ORCH), target, pointer, value)
+        else:
+            text = configedit.splice_value(before, pointer, value)
+            out = configedit.apply_raw_save(dict(ORCH), target, text)
+    finally:
+        livearm.run_module_status = saved
     if not out.get("ok"):
-        assert files[target].read_text(encoding="utf-8") == before, "a refusal must change nothing"
+        assert file.read_text(encoding="utf-8") == before, "a refusal must change nothing"
     return out
 
 
@@ -107,6 +123,18 @@ def test_a_field_the_page_does_not_offer_is_refused(home, pointer):
     assert (
         out["ok"] is False and out["code"] == "guarded" and "not a field this surface edits" in out["error"]
     )
+
+
+@pytest.mark.parametrize("value", [[{"login": "alt", "argv": ["cmd.exe"]}], {"login": "alt"}, ["alt", 3]])
+def test_an_allowed_field_takes_no_shape_the_page_never_sends(home, value):
+    """`/streamer/instances` is a string list on the page; an object under it is a crafted save."""
+    out = save(home, "orchestrator", "/streamer/instances", value)
+    assert out["ok"] is False and out["code"] == "guarded" and "not this shape" in out["error"]
+
+
+def test_an_allowed_field_takes_the_shapes_the_page_sends(home):
+    assert save(home, "orchestrator", "/streamer/instances", ["alt"])["ok"] is True
+    assert save(home, "orchestrator", "/watchdog/interval_minutes", 12)["ok"] is True
 
 
 def test_a_module_target_is_not_held_to_the_orchestrators_list(home):
@@ -208,6 +236,28 @@ def test_another_logins_held_book_stops_the_switch_too(home, monkeypatch):
 
     out = save(home, "orchestrator", "/modules/meic/enabled", False, status)
     assert out["ok"] is False and out["code"] == "not_flat" and "login alt" in out["error"]
+
+
+@pytest.mark.parametrize("path", ["field", "raw"])  # the settings tool's two write paths
+def test_every_write_path_refuses_meic_off_under_a_held_book(home, path):
+    held = lambda cfg, login=None: {**FLAT, "open_positions": 1}  # noqa: E731
+    out = save(home, "orchestrator", "/modules/meic/enabled", False, held, path=path)
+    assert out["ok"] is False and out["code"] == "not_flat"
+    flat = lambda cfg, login=None: dict(FLAT)  # noqa: E731
+    assert save(home, "orchestrator", "/modules/meic/enabled", False, flat, path=path)["ok"] is True
+
+
+def test_removing_meics_block_is_switching_it_off(home):
+    doc = json.loads((home / "config.json").read_text(encoding="utf-8"))
+    del doc["modules"]["meic"]
+    held = lambda cfg, login=None: {**FLAT, "open_positions": 1}  # noqa: E731
+    saved = livearm.run_module_status
+    livearm.run_module_status = held
+    try:
+        out = configedit.apply_raw_save(dict(ORCH), "orchestrator", json.dumps(doc, indent=2))
+    finally:
+        livearm.run_module_status = saved
+    assert out["ok"] is False and out["code"] == "not_flat"
 
 
 def test_switching_meic_on_never_asks_the_module(home):

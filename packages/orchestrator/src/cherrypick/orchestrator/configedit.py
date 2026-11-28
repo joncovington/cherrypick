@@ -165,6 +165,39 @@ def editable(target_id: str, pointer: str) -> bool:
     return False
 
 
+def editable_value(target_id: str, value: Any) -> bool:
+    """Whether `value` has a shape the page's fields take on an allow-listed target: a scalar or a list
+    of strings (the Config page's booleans, numbers, strings, times, enums and string lists). An
+    allowed pointer must not carry an object, or a crafted save could write any structure under it."""
+    if target_id not in EDITABLE:
+        return True
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return True
+    return isinstance(value, list) and all(isinstance(v, str) for v in value)
+
+
+def module_switch_refusal(cfg: dict[str, Any], target_id: str, old_doc: Any, new_doc: Any) -> dict | None:
+    """A refusal when this write switches `modules.meic.enabled` off while one of MEIC's live accounts
+    is not flat and settled (#1501, `livearm.module_off_refusal`), else None. Every write path runs it
+    (`apply_field_edit`, `apply_raw_save`, so the console's save and the settings tool alike), and it
+    reads the documents, not the edit, so any spelling of the change is caught. Only MEIC: the ladder's
+    status does not say whether it holds lots, the same limit `livearm` states.
+
+    Asks the module's status, a subprocess, only when the switch actually goes from on to off. No race
+    with a new position: the refusal holds unless every MEIC live account is unarmed, and an unarmed
+    MEIC loop opens nothing."""
+    if target_id != "orchestrator":
+        return None
+    was = _at(old_doc, ["modules", "meic", "enabled"])
+    now = _at(new_doc, ["modules", "meic", "enabled"])
+    if was is not True or now is True:
+        return None
+    from . import livearm  # livearm imports this module; asked lazily, only for this one change
+
+    refused = livearm.module_off_refusal(cfg)
+    return None if refused is None else {**refused, "pointer": livearm.MODULE_SWITCH}
+
+
 # Keys whose change breaks an orchestrator coupling if done silently (docs/configuration-and-storage.md):
 # a module's paper_db + trade_schema pair, and keyring_service + account designation. Any edit touching
 # one of these returns a warning; the save still proceeds.
@@ -643,6 +676,9 @@ def apply_field_edit(
     violations = guard_violations(target_id, old_doc, new_doc)
     if violations:
         return {"ok": False, "error": f"guarded pointer(s) changed: {violations}"}
+    refused = module_switch_refusal(cfg, target_id, old_doc, new_doc)
+    if refused is not None:
+        return refused
 
     issues = validate(cfg, target_id, new_doc)
     if old_value is not _MISSING and old_value is not None and value is not None:
@@ -694,6 +730,9 @@ def apply_raw_save(
     violations = guard_violations(target_id, old_doc, new_doc)
     if violations:
         return {"ok": False, "error": f"guarded pointer(s) changed: {violations}"}
+    refused = module_switch_refusal(cfg, target_id, old_doc, new_doc)
+    if refused is not None:
+        return refused
 
     issues = validate(cfg, target_id, new_doc) + coupled_warnings(old_doc, new_doc)
     errors = [msg for lvl, msg in issues if lvl == "error"]

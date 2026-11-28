@@ -118,7 +118,7 @@ MODULE_SWITCH = f"/modules/{MODULE}/enabled"
 
 def module_off_refusal(
     cfg: dict[str, Any],
-    status_fn: Callable[[dict[str, Any], str | None], dict[str, Any] | None] = run_module_status,
+    status_fn: Callable[[dict[str, Any], str | None], dict[str, Any] | None] | None = None,
 ) -> dict[str, Any] | None:
     """Why `modules.meic.enabled` may not be switched off now, as a refusal, or None when it may (#1501).
 
@@ -126,6 +126,7 @@ def module_off_refusal(
     and the main account's manages what its book holds even unarmed. So the switch goes off only when
     every MEIC live account is flat and settled by `not_flat`, the rule the arm change uses. A status
     that cannot be read refuses: unknown is not flat. Switching it on is never refused here."""
+    status_fn = status_fn or run_module_status  # read at the call, so a test can stand in for it
     blockers: list[str] = []
     for login in [None, *cfgmod.live_accounts(cfg, MODULE)]:
         where = "the main account" if login is None else f"login {login}"

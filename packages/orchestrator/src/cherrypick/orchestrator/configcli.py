@@ -51,14 +51,15 @@ def _op_load(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]:
         return _err(str(exc), "not_found")
 
 
-def _op_save(cfg: dict[str, Any], req: dict[str, Any], status_fn=livearm.run_module_status) -> dict[str, Any]:
+def _op_save(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]:
     """Splice every edit into the file's text, then hand the result to the raw-save path — so a
     section's worth of edits is one backup, one atomic write, and one mtime check, and a refusal
     part-way leaves the file untouched.
 
-    Refused before anything is spliced: a guarded pointer, a pointer outside the target's allow-list
-    (`configedit.EDITABLE`, the fields the Config page offers), and switching MEIC off while one of its
-    live accounts is not flat and settled (`livearm.module_off_refusal`)."""
+    Refused before anything is spliced: a guarded pointer, and on a target held to an allow-list
+    (`configedit.EDITABLE`, the fields the Config page offers) a pointer outside it or a value of a
+    shape no page field takes. Switching MEIC off while one of its live accounts holds a book is
+    refused in the write path itself (`configedit.module_switch_refusal`), with its own code."""
     target = req.get("target")
     edits = req.get("edits")
     if not isinstance(target, str) or not isinstance(edits, list) or not edits:
@@ -77,6 +78,12 @@ def _op_save(cfg: dict[str, Any], req: dict[str, Any], status_fn=livearm.run_mod
                 "guarded",
                 pointer=pointer,
             )
+        if not configedit.editable_value(target, edit.get("value")):
+            return _err(
+                f"{pointer}: a page field takes a value or a list of strings, not this shape",
+                "guarded",
+                pointer=pointer,
+            )
 
     try:
         path = configedit._target_path(cfg, target)
@@ -86,17 +93,6 @@ def _op_save(cfg: dict[str, Any], req: dict[str, Any], status_fn=livearm.run_mod
         return _err(f"target '{target}' has no config file yet", "not_found")
 
     text = path.read_text(encoding="utf-8")
-    if target == "orchestrator" and any(
-        e["pointer"] == livearm.MODULE_SWITCH and not e.get("value") for e in edits
-    ):
-        try:
-            on_now = bool((json.loads(text).get("modules") or {}).get(livearm.MODULE, {}).get("enabled"))
-        except (ValueError, AttributeError):
-            on_now = True  # a file that cannot be read is not known to have MEIC off
-        if on_now:
-            refused = livearm.module_off_refusal(cfg, status_fn)
-            if refused is not None:
-                return {**refused, "pointer": livearm.MODULE_SWITCH}
     for edit in edits:
         try:
             text = configedit.splice_or_add(cfg, target, text, edit["pointer"], edit.get("value"))
@@ -108,6 +104,8 @@ def _op_save(cfg: dict[str, Any], req: dict[str, Any], status_fn=livearm.run_mod
     has = isinstance(expected, (int, float)) and not isinstance(expected, bool)
     result = configedit.apply_raw_save(cfg, target, text, int(expected) if has else None)
     if not result.get("ok"):
+        if result.get("code"):  # a refusal that names itself (the MEIC switch: not_flat, status_unreadable)
+            return result
         error = str(result.get("error", ""))
         code = "conflict" if "changed on disk" in error else "guarded" if "guarded" in error else "invalid"
         return {**result, "code": code}

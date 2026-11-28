@@ -341,11 +341,16 @@ filename; override with `paper.sla_state_prefix`.
   deliberately NOT wired in, and a refusal is data (`ok: false` plus a `code`) on exit 0 so a caller
   can tell "the config said no" from "the bridge is broken". Keep new ops thin. On the orchestrator
   target a `save` edit is held to `configedit.EDITABLE`, the fields the Config page offers (`*` one
-  segment; `test_config_guards_1501.py` holds it to `fieldMeta.ts`): any other pointer is refused
-  `guarded`, so the supervisor's argv, paths and job switches are hand edits. The settings tool's own
-  editor is not held to it. Switching `modules.meic.enabled` off is refused (`not_flat`, or
-  `status_unreadable`) unless every MEIC live account, the main one and each other login's, is flat and
-  settled by `livearm.not_flat`: the switch removes the live jobs that manage a held book. On
+  segment; `test_config_guards_1501.py` holds it to `fieldMeta.ts`), and to the shapes those fields take
+  (a scalar or a list of strings): any other pointer or shape is refused `guarded`, so the supervisor's
+  argv, paths and job switches are hand edits. The settings tool's own editor is not held to the list.
+  Two rules bind every write path, the settings tool included, because they sit in `configedit`'s
+  `apply_field_edit` and `apply_raw_save`: `GUARDED` (MEIC's stop ratio, delta targets and
+  `live.resting_stop` among it, paper-shared keys or not), and switching `modules.meic.enabled` off
+  (`module_switch_refusal`, old document against new, so any spelling of the change), refused
+  (`not_flat`, or `status_unreadable`) unless every MEIC live account, the main one and each other
+  login's, is flat and settled by `livearm.not_flat`: the switch removes the live jobs that manage a held
+  book. Only MEIC has that check; the ladder's status does not say whether it holds lots. On
   `meic-risk`, the profile each MEIC live loop trades (`live.arm`, `live_accounts.<login>.arm`) is
   guarded whole but its `enabled`, which live does not read. A `save` edit at a
   pointer the file does not have is refused (`not_found`), with one exception: a single top-level key
