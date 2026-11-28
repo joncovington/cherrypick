@@ -105,6 +105,23 @@ def test_four_arms_are_judged_and_the_ungated_two_reported():
     assert m.GATES["partial"] == ("stretch", "skew") and len(m.GATES["full"]) == 4
 
 
+class _Counted:
+    def __init__(self, **counts):
+        self.counts = counts
+
+
+def test_the_smoke_excuses_every_gated_arm_and_refuses_when_the_ungated_open_nothing():
+    warm = m.smoke_warmup_arms()
+    assert set(warm) == set(m.JUDGED) and all("skew" in why for why in warm.values())
+    empty = {a: {s: _Counted() for s in m.NAMES} for a in m.ARMS}
+    assert "refused" in m.smoke_refusal(empty)
+    opened = {**empty, m.REPORTED[0]: {**empty[m.REPORTED[0]], m.NAMES[0]: _Counted(entries=1)}}
+    assert m.smoke_refusal(opened) == {}
+    # a gated arm's entry is not the ungated arms': still refused
+    gated = {**empty, m.JUDGED[0]: {s: _Counted(entries=3) for s in m.NAMES}}
+    assert "refused" in m.smoke_refusal(gated)
+
+
 # ------------------------------------------------------------------------------------------------
 # The checklist.
 

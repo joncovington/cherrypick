@@ -68,6 +68,12 @@ beyond the latest release.
   what the rest wait behind. The local lane counts only rows that are not waiting on a queued fetch, so
   "idle" there means no local work exists. A queued row also names where its chain of `after` rows ends.
   Nothing to do.
+- **A smoke can excuse an arm its sample cannot open.** A smoke names such an arm in `warmup_arms`
+  with why (a gate reading a year of history), and the research queue finishes the row with the
+  excused arms in its note and a warning instead of failing it; any other empty arm, and every
+  empty arm of a full study, still fails. Item 104's smoke names its four gated arms and refuses
+  when its ungated arms open nothing. Item 76's re-plan keeps the recorded holdout end. Nothing to
+  do.
 - **Item 104 requests each year-long call through its expiry.** A close with a leg unquoted waits a
   session and tries again until the expiry settles it, and those sessions were read undeclared, as no
   chain. The plan now covers them, and the script carries a correction entry. Nothing to do.

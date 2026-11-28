@@ -684,6 +684,34 @@ def test_a_verdict_block_with_an_arm_judged_on_no_trades_fails(queue, files, mon
     assert rq.zero_trade_arms({"arms": {"A": {"n": 0}}}) == [] and rq.zero_trade_arms(None) == []
 
 
+def test_a_smoke_excuses_only_the_warmup_arms_it_names_and_says_so(queue, files, monkeypatch, tmp_path):
+    monkeypatch.setattr(rq, "repo_root", lambda: files["root"])
+    monkeypatch.setattr(rq, "git_tracked", _tracked)
+    monkeypatch.setattr(rq, "stamp_output", lambda row: 0)
+    out = tmp_path / "out" / "smoke.json"
+    out.parent.mkdir()
+
+    def run(doc):
+        out.write_text(json.dumps(doc), encoding="utf-8")
+        rq.add("item104", "script", {"path": "scripts/study.py"}, step="smoke", output=str(out), path=queue,
+               root=files["root"], tracked=_tracked)  # fmt: skip
+        return _ran(queue, "{}")[0]
+
+    why = "its gate reads a year of skew"
+    empty = {"A": {"n": 0}, "B": {"n": 0}}
+    gated = {"rule": {}, "arms": empty, "smoke": True, "warmup_arms": {"A": why, "B": why}}
+    row = run(gated)
+    assert row["status"] == "done" and "warm-up arm(s) A, B (its gate reads a year of skew)" in row["note"]
+    # an arm it does not name still fails the smoke
+    row = run({**gated, "warmup_arms": {"A": why}})
+    assert row["status"] == "failed" and "arm(s) B" in row["note"]
+    # a full study's empty arm is never excused, nor an arm named without a reason
+    row = run({**gated, "smoke": False})
+    assert row["status"] == "failed" and "arm(s) A, B" in row["note"]
+    row = run({**gated, "warmup_arms": {"A": "", "B": " "}})
+    assert row["status"] == "failed" and "arm(s) A, B" in row["note"]
+
+
 def test_a_failure_says_the_last_thing_the_task_wrote(queue, files, tmp_path):
     rq.add("item74", "fetch-chains", {"requests": str(files["req"])}, step="study", path=queue)
     log = tmp_path / "logs" / "1.log"

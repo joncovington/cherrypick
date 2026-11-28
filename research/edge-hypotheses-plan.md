@@ -7205,7 +7205,8 @@ for this question has been read.*
     lot's cost. The time-halves split the lots by their buy session.
   - `decay` is item 27's exit schedule (104% to day 30, breakeven after costs to day 120, 95% of cost
     after) filled as item 27 fills, on the same lots from the session after the buy, with no calls.
-  - `plan` records the earlier of the two names' last sessions as the holdout's end.
+  - `plan` records the earlier of the two names' last sessions as the holdout's end; a re-plan keeps
+    the recorded end.
 - **Data:** ThetaData Options Standard end-of-day chains for SOXL and TQQQ, as daily paths from each
   sale to its expiry, fetched by a research-queue `fetch-chain-paths` row into the backtest store.
   Expiries come from item 29's listing. The replay is `packages/backtest/scripts/share_ladder_item76.py`,

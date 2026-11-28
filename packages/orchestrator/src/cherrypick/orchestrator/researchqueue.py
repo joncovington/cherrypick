@@ -74,7 +74,9 @@ says the last line the task wrote.
   its note and a warning in place of the plain notice;
 - a script that printed a report with a `refused` key failed, whatever its exit code;
 - a script whose declared output is a study kit verdict block (`rule` and `arms`) with an arm judged
-  on no trades failed (`zero_trade_arms`).
+  on no trades failed (`zero_trade_arms`), except on a smoke (`"smoke": true`) an arm it names in
+  `warmup_arms` with why (a gate that reads more history than the sample holds): that one is done,
+  with the excused arms in its note and a warning.
 
 **The job runs only the code it started on** (`watch_code`, 2026-11-14). `run_ready` keeps picking
 rows for as long as any is ready, so a merge mid-chain never reached it (#825's priority, #967's
@@ -723,6 +725,17 @@ def zero_trade_arms(doc: dict | None) -> list[str]:
     return sorted(a for a, b in doc["arms"].items() if isinstance(b, dict) and b.get("n") == 0)
 
 
+def warmup_arms(doc: dict | None) -> dict[str, str]:
+    """The arms a smoke (`"smoke": true`) says cannot trade on its sample, each with why: a gate that
+    reads a history the sample does not hold (item 104's skew needs 126 readings). Only a smoke names
+    them; a full study's empty arm is never excused."""
+    if not isinstance(doc, dict) or doc.get("smoke") is not True:
+        return {}
+    if not isinstance(doc.get("warmup_arms"), dict):
+        return {}
+    return {str(a): str(why) for a, why in doc["warmup_arms"].items() if str(why).strip()}
+
+
 def postcheck(row: dict, report: dict, doc: dict | None = None) -> tuple[str | None, str | None]:
     """A row that exited 0 and finished: (why it did nothing and so failed, or None; a warning to put
     on a done row, or None). Judged from the report the task printed last and, for a script, its
@@ -733,8 +746,16 @@ def postcheck(row: dict, report: dict, doc: dict | None = None) -> tuple[str | N
         if why:
             return f"exited 0 but refused: {why}", None
         empty = zero_trade_arms(doc)
+        excused = warmup_arms(doc)
+        failed = [a for a in empty if a not in excused]
+        if failed:
+            return f"judged no trades in arm(s) {', '.join(failed)}", None
         if empty:
-            return f"judged no trades in arm(s) {', '.join(empty)}", None
+            by_why: dict[str, list[str]] = {}
+            for a in empty:
+                by_why.setdefault(excused[a], []).append(a)
+            said = "; ".join(f"{', '.join(arms)} ({why})" for why, arms in by_why.items())
+            return None, f"smoke: no trades in warm-up arm(s) {said}"
         return None, None
     if kind == "fetch-sessions":
         want = str(_row_args(row).get("dataset", "SPX")).upper()
