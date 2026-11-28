@@ -711,8 +711,9 @@ def holdout_end_for(recorded: dict | None, last_sessions: list[str]) -> tuple[st
     h = recorded["holdout"]
     if not (isinstance(h, list) and len(h) == 2 and all(isinstance(x, str) for x in h)):
         raise SystemExit(f"plan.json's holdout {h!r} is not [start, end]: fix or remove it to re-plan")
-    if h[1] > min(last_sessions):
-        raise SystemExit(f"plan.json's holdout ends {h[1]}, after the data's last session {min(last_sessions)}")
+    last = min(last_sessions)
+    if h[1] > last:
+        raise SystemExit(f"plan.json's holdout ends {h[1]}, after the data's last session {last}")
     return h[1], True
 
 
