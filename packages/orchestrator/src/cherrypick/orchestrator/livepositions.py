@@ -152,7 +152,9 @@ def evaluate(
         exp = _lp.expected_legs(leg for m in modules for leg in live[m].get("legs") or [])
         held = _lp.broker_legs(broker["positions"], underlyings)
         when = now_et or timeutil.now_et()
-        today, after_close = when.date().isoformat(), when.hour >= 16
+        # After the day's own close: 13:00 on an early close, when the ledger has settled the 0DTE legs
+        # and the broker still lists them until its overnight processing.
+        today, after_close = when.date().isoformat(), when.time() >= timeutil.session_close(when)
         exp, _ = _lp.drop_expired(exp, today, after_close)
         held, expired = _lp.drop_expired(held, today, after_close)
         # A module that names the expiries it trades (MEIC: today's) leaves the account's other
