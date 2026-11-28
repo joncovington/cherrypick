@@ -261,6 +261,17 @@ filename; override with `paper.sla_state_prefix`.
 
 ## Invariants (do not violate — the reasons are load-bearing)
 
+- **A session gate reads the day's own close** (`timeutil.session_close`, from `core.calendar`: 13:00 on an
+  NYSE early close, 16:00 otherwise, 16:00 when the calendar cannot be read). `is_session_window`,
+  `is_market_hours`, the watchdog's paper and live settlement checks (the close plus the module's grace)
+  and the live-positions check's after-close cut all use it, so a half day's `in_session` ends at 13:00
+  and an unsettled book is flagged from 13:30. The job table's own windows (a loop's `window_end`, a
+  daily job's time) are fixed by the table, not the day, so `upgrade`'s quiet window, derived from them,
+  is the same on every trading day. A module that settles at a fixed time (MEIC's
+  `expiration_settlement_time`, 16:00) holds nothing to settle on a half day, since no module enters on one; one
+  that did would read as overdue from 13:30. `MARKET_CLOSE` is only the fallback and `upgrade`'s settle-band
+  anchor (`test_timeutil.py`, `test_watchdog_live.py`, `test_watchdog_settle_and_stall.py`,
+  `test_livepositions.py`; each was shown to fail on the fixed constant).
 - **A reminder reads an allow-list and acts on nothing** (`reminders.py`). Its conditions
   are `KINDS` (config's module switch, a module's own `--status` field), never a command, and a
   reminder only tells a person: it never changes config itself (`test_reminders.py`; each guard was
@@ -446,7 +457,20 @@ filename; override with `paper.sla_state_prefix`.
   module's keyring via `cherrypick.core.auth.CredentialStore` (service from `keyring_service`). It
   never places/cancels/closes/adjusts an order, flips `enable_live_trading`, runs a live engine, or
   edits a module's code or config. Account writes are human-confirmed; only the keyring write sees the
-  full number.
+  full number. **`account --set` and `--clear` refuse, in `accounts.py`, so every caller gets it
+  (console onboarding and `connect` too), while a live loop the designation reaches is armed today or
+  holds a position or working order.** No override. A module's own designation is judged by that
+  module's `live_loop --status`; a login's by `--status --login`; the suite-wide one by every live
+  module that inherits it (one with no designation of its own). "Armed" is the arm record or the
+  status's own armed field, and "holds" is its open positions (the ladder's `open_lots`) and working
+  orders, an unresolved broker submission or an orphaned order. MEIC's main account manages its book
+  unarmed, so armed alone is not the test. A status that cannot be read, or that does not say what the
+  book holds, refuses: unknown is not flat. The one exception is a retired module (switched off in the
+  suite config and its own live switch known off): armed or holding still refuses, but a status of its
+  that cannot be read or does not say is a `warnings` entry on the result. A module with no keyring
+  service counts as inheriting. flies' older arm-record location is not read here; its status's
+  `armed_for` covers it. The refusal names the module and the reason, the account masked, and
+  `account` exits 1 on any `ok: false` it prints.
 - **A resident job's liveness is PUBLISHED by the job, never inferred from its log.** `silence_file`
   is a heartbeat the job writes each tick (`cfgmod.resident_heartbeat_path` → `state/<name>.heartbeat`,
   convention owned by `cherrypick.core.home.heartbeat_path`). **Never point a `silence_file` at a log**

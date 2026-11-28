@@ -329,6 +329,10 @@ an arm, only for what an arm reads (`feed.reads`).
   close, so every tick of a half day marks a pending arm whose window is not over by the loop's last tick
   (the minute before the close) `missed` (`record_misses`' `day_over`); an arm whose window ends sooner is
   refused in it and missed at its end, the half-day reason first: no arm-day is left `pending`.
+  The refusal is a declared boundary (key `half_day_no_entries` in `measurement_breaks`, dated
+  2026-11-30, the first session after #1491; no automations position was opened on 2026-11-27): a
+  replay of a journal from before it, or a backtest, treats a half day's entry differently from
+  before, so results are not pooled across it.
 - **The replay record.** Every decision tick writes one line to
   `~/.cherrypick/data/automations/replay/<session>.jsonl`: the compact snapshot, the arms as they stood and the
   decisions. `python run.py replay <file>` runs them again through `paper.replay` and lists where the
