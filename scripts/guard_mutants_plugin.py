@@ -1043,7 +1043,7 @@ MUTANTS: tuple[Mutant, ...] = (
     ),
     Mutant(
         id="ladder-tick-gates-unmet",
-        breaks="the ladder's tick reads the broker with a gate that blocks everything unmet",
+        breaks="no gate reads as unmet (the tick and --status alike), so the tick reads the broker anyway",
         package="ladder",
         tests=(
             "tests/test_live_tick.py::test_gates_unmet_means_the_broker_is_not_even_built",
@@ -1055,7 +1055,8 @@ MUTANTS: tuple[Mutant, ...] = (
     ),
     Mutant(
         id="ladder-arm-record",
-        breaks="the ladder's arm gate holds with no record for today, a stale one, or past disarm_at",
+        breaks="the ladder's arm.record gate holds with no record, a stale one or past disarm_at (the tick's "
+        "own armed_for check is separate, pinned by the unarmed tick tests)",
         package="ladder",
         tests=(
             "tests/test_live_gates.py::test_arm_record_refuses_when_missing_stale_or_past_disarm",

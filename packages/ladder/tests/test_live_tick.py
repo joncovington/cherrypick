@@ -400,20 +400,12 @@ def test_a_stale_arm_record_is_removed_before_any_broker_read(world):
     assert world.broker.calls == [] and out["planned"] is False
 
 
-class _NeverBuilt:
-    """Stands in for `BrokerAdapter` where none may be built: building one fails the test there and
-    then. A class, not a lambda, so the tick's `isinstance` check still reads it."""
-
-    def __init__(self, config):
-        raise AssertionError("a broker was built with a gate unmet")
-
-
-def test_gates_unmet_means_the_broker_is_not_even_built(world, monkeypatch):
-    monkeypatch.setattr(live_tick, "BrokerAdapter", _NeverBuilt)
+def test_gates_unmet_means_the_broker_is_not_even_built(world, no_broker_built):
     cfg = live_config(enabled=False)
     out = live_tick.run_once(
         cfg, conn=world.conn, cache_path=world.cache.path, when=at("09:00"), designated=ACCOUNT
     )
+    assert no_broker_built == []
     assert out["skipped"] == "gates_unmet"
 
 
