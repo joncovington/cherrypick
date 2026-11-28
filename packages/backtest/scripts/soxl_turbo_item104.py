@@ -65,7 +65,17 @@ def _load_item103():
 i103 = _load_item103()
 
 #: The correction log: one entry per fix to this replay, oldest first (orchestrator/studyversion.py).
-REPLAY_CORRECTIONS = ()
+REPLAY_CORRECTIONS = (
+    {
+        "on": "2026-11-28",
+        "what": "The plan requests each year-long call's path to its expiry, not to its 45-day close. A "
+        "close with a leg unquoted waits a session and tries again, and the smoke read such sessions past "
+        "the declared close as no chain (the count is in the local smoke result).",
+        "why": "An undeclared read is counted and read as no chain, so a waiting close was never priced.",
+        "decided": "user asked for the plan fix after the smoke's undeclared reads were shown",
+        "before_read": True,
+    },
+)
 
 #: The kit's three bars on each position's weekly net, one run cut at one date (weeks ending before it are
 #: the design). The delta bar applies: the structure is long delta.
@@ -534,8 +544,9 @@ def split_factors(sym: str) -> dict[str, float]:
 
 
 def path_requests(sym: str, sessions: list[str], listed_at, expiries: list[str]) -> list[dict]:
-    """Every session's year-long monthly from the first session it is picked to its 45-day close, and every
-    session's 45-day expiry over the sessions it is read on."""
+    """Every session's year-long monthly from the first session it is picked to its expiry, and every
+    session's 45-day expiry over the sessions it is read on. A long closes 45 days out, but a close with a
+    leg unquoted waits a session and tries again, up to the expiry, where it settles: so the whole tail."""
     span: dict[str, list[str]] = {}
 
     def add(e: str, a: str, b: str) -> None:
@@ -547,7 +558,7 @@ def path_requests(sym: str, sessions: list[str], listed_at, expiries: list[str])
     for i, d in enumerate(sessions):
         e = i103.pick_long_expiry(d, listed_at(d))
         if e is not None:
-            add(e, d, next((x for x in sessions[i:] if i103.long_due(x, e)), sessions[-1]))
+            add(e, d, next((x for x in sessions[i:] if x >= e), sessions[-1]))
         se = i103.pick_short_expiry(d, expiries, "9999-12-31")
         if se is not None:
             add(se, d, d)
