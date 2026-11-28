@@ -27,7 +27,7 @@ Here is the MEIC `today` tab as a worked example.
 
 ![MEIC today tab: net on the session, positions, costs and evaluations tiles, then a trade summary with net P&L, premium capture, return on risk and win rate](../images/meic-summary.png)
 
-The four tiles across the top are net on the session, positions, costs and evaluations. Below them, the trade summary can be set to a day, week, month, year or all time. The net P&L card shows gross captured, then fees, settlement and open risk, so you can see how the net was reached. Premium capture, return on risk and win rate are the gauges beneath it.
+The four tiles across the top are net on the session, positions, costs and evaluations. Below them, the trade summary can be set to a day, week, month, year or all time. The net P&L card shows gross captured, then fees, settlement and open risk, so you can see how the net was reached. Beside the day it counts trades still open: on today's session they are "settling at the close", and on a past day they read "still open", a trade a settle missed. Premium capture, return on risk and win rate are the gauges beneath it.
 
 ### Arms
 
@@ -79,7 +79,7 @@ The chart is the ratio, session by session, against the two thresholds. Below it
 
 ## Weekly put (`/weeklyput`)
 
-Sells the put nearest 10 delta on four index and fund underlyings, seven days before each weekly expiry that is not a standard monthly, and holds it to expiry. Paper-only and experimental. It is judged by the cycle, one expiry at a time, not by the single put. Tabs: `summary` ("today"), `cycles`, `positions`, `history`, `decisions`, `performance`, `analysis`, `costs`, `changes` and `guide` ("help"). `cycles` shows what each expiry earned, name by name, and which names were missed. An in-the-money fund put near expiry is flagged assignment-exposed: early assignment is measured, never modelled, so those results are an upper bound.
+Sells the put nearest 10 delta on four index and fund underlyings, seven days before each weekly expiry that is not a standard monthly, and holds it to expiry. Paper-only and experimental. It is judged by the cycle, one expiry at a time, not by the single put. Tabs: `summary` ("today"), `cycles`, `positions`, `history`, `decisions`, `performance`, `analysis`, `costs`, `changes` and `guide` ("help"). On a half day (an early close) it does not trade, and the `entry session` tile says "half day, not traded". `cycles` shows what each expiry earned, name by name, and which names were missed. An in-the-money fund put near expiry is flagged assignment-exposed: early assignment is measured, never modelled, so those results are an upper bound.
 
 ## Ladder (`/ladder`)
 

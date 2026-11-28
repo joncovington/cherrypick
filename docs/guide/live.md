@@ -37,7 +37,7 @@ Nothing on the other pages is real money unless a module is live and armed.
 
 Under the page name, a chip sums up trading status. On the account tabs and `today` it reads
 `none armed` or, say, `1 armed`, with `HALTED` added when the halt flag is up, and `needs attention`
-when something wants you. On a loop's card it is that loop's own arm record, such as `not armed`.
+when something wants you. On a loop's card it is that loop's own arm record, such as `not armed`. MEIC's and the ladder's cards also carry a `dry run`, `live` or `unknown` chip, armed or not: a dry run builds each entry and checks it against the real account and sends nothing (a position already held is still managed), `live` sends real entries, and `unknown` means the loop's status could not be read. Its ? explains it. The setting is `live.dry_run`, changed by hand in the module's config, never from the console.
 On `flies` it is the pilot's. Hover for the detail. Each live loop is armed separately, which is why
 one chip does not cover all of them. On the right sits the alert-daemon chip.
 

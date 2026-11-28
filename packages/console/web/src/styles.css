@@ -14938,3 +14938,25 @@ span.b-start {
     width: 100%;
   }
 }
+
+/* The dry-run chip's ? note (Live > today): the card head can sit at the right edge of a narrow page, so on a
+   tablet or phone the note is a sheet inside the content area rather than a popover that would be clipped. */
+.lt-dryrun {
+  display: inline-flex;
+  align-items: center;
+}
+.lt-dryrun-tip p {
+  margin: 0 0 6px;
+}
+.lt-dryrun-tip p:last-child {
+  margin-bottom: 0;
+}
+@media (max-width: 820px) {
+  .lt-dryrun-tip {
+    position: fixed;
+    top: 120px;
+    left: 76px;
+    right: 12px;
+    width: auto;
+  }
+}

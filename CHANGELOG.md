@@ -16,6 +16,12 @@ beyond the latest release.
 - **`upgrade` checks the release ZIP against a SHA-256 before it unzips, and four small security gaps close.**
   The release workflow adds the digest of the tag's source ZIP to the published manifest; a ZIP upgrade that downloads something else stops before unzipping, and a manifest with no checksum warns and goes on if you confirm. A change of the live arm now journals `live_arm_change_attempted` first and `live_arm_changed` only once the config write landed (`live_arm_change_failed` otherwise). The demo console drops inherited per-scope data and log directory overrides, the replay token mask shows two characters instead of eight, and CI pins `pnpm/action-setup` to a commit. Nothing to do.
 
+- **The console says more about what a page is showing.** Live > today now shows a dry run, live or unknown chip on
+  MEIC's and the ladder's cards, armed or not, with a ? that explains a dry run; the value is each loop's own status, and
+  an unreadable status reads unknown, never dry run. The MEIC summary calls an open trade on a past day "still open"
+  instead of "settling at the close". The Weekly put page says "half day, not traded" on an early close. The skate tab
+  marks a name whose best call and put both pass, and the income lists get a Hide leveraged funds switch that starts off.
+  Nothing to do.
 - **`account --set` and `--clear` refuse while a live loop is armed or holds a book.** The designated
   account cannot change under a live loop that is armed for today, or under one that holds a position or
   a working order (MEIC's main account manages its book even when it is not armed). The refusal is in

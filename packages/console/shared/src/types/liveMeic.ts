@@ -171,5 +171,8 @@ export type LiveMeicReadiness =
       openIcs: string[];
       /** The loop's CRITICAL lines today, oldest first as the module lists them. */
       criticals: LiveMeicCritical[];
+      /** The status's own `dry_run` (`live.dry_run`): true sends no entry, false sends them, null when the
+       *  status does not report it (an older build). */
+      dryRun?: boolean | null;
     }
   | { ok: false; error: string };

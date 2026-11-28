@@ -101,6 +101,7 @@ export function shapeStatus(res: SpawnedJson): LadderLiveStatus {
     error: null,
     // Only an explicit `false` is live, as the module reads `live.dry_run`: anything else stays dry-run.
     mode: dry === false ? "live" : "dry-run",
+    dryRunStated: typeof dry === "boolean",
     note: str(j["note"]),
     today: str(j["today"]),
     ready,
