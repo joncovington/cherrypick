@@ -31,7 +31,16 @@ describe("the MEIC status bridge", () => {
       warnings: ["halt flag set"],
       openIcs: STATUS.open_ics,
       criticals: STATUS.criticals_today,
+      dryRun: null, // this status does not report it: neither true nor false
     });
+  });
+
+  it("hands on the status's own dry_run, and only a real boolean", () => {
+    const of = (v: unknown) => shapeReadiness({ ok: true, json: { ...STATUS, dry_run: v }, error: null });
+    expect(of(true)).toMatchObject({ dryRun: true });
+    expect(of(false)).toMatchObject({ dryRun: false });
+    expect(of("false")).toMatchObject({ dryRun: null });
+    expect(of(undefined)).toMatchObject({ dryRun: null });
   });
 
   it("reads a clean verdict as ready", () => {

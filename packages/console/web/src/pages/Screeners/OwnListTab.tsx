@@ -171,6 +171,8 @@ export interface OwnListFilters {
   minPremium: number;
   /** Upper-cased symbol search; "" is off. */
   q: string;
+  /** Hide the declared leveraged, inverse and volatility funds (`leveraged` set). Off unless asked. */
+  hideLeveraged?: boolean;
 }
 
 /**
@@ -185,14 +187,16 @@ export function applyFilters(all: IncomeListRow[], f: OwnListFilters) {
   const fitOk = (r: IncomeListRow) => f.allFit || r.fit !== false;
   // An unquoted row has no premium to compare, so it stays shown, marked, as it does under the others.
   const premiumOk = (r: IncomeListRow) => f.minPremium === 0 || r.premium === null || r.premium >= f.minPremium;
+  const leveragedOk = (r: IncomeListRow) => !f.hideLeveraged || r.leveraged === null;
   const matches = (r: IncomeListRow) => f.q === "" || r.symbol.includes(f.q);
-  const hidden = { thin: 0, inTrade: 0, unfit: 0, small: 0, unmatched: 0 };
+  const hidden = { thin: 0, inTrade: 0, unfit: 0, small: 0, leveraged: 0, unmatched: 0 };
   const shown: IncomeListRow[] = [];
   for (const r of all) {
     if (!tradeOk(r)) hidden.thin += 1;
     else if (!earningsOk(r)) hidden.inTrade += 1;
     else if (!fitOk(r)) hidden.unfit += 1;
     else if (!premiumOk(r)) hidden.small += 1;
+    else if (!leveragedOk(r)) hidden.leveraged += 1;
     else if (!matches(r)) hidden.unmatched += 1;
     else shown.push(r);
   }
@@ -281,17 +285,18 @@ export function OwnListTab({ list, tabs }: { list: IncomeList; tabs?: ReactNode 
   const allTrades = params.get("trade") === "all";
   const allEarnings = params.get("earnings") === "all";
   const allFit = params.get("fit") === "all";
+  const hideLeveraged = params.get("leveraged") === "hide";
   const q = (params.get("q") ?? "").trim().toUpperCase();
 
   const all = data?.rows ?? [];
   const minPremium = useMinPremium(list, params.get("premium"));
-  const { shown, hidden } = applyFilters(all, { allTrades, allEarnings, allFit, minPremium, q });
-  const { thin, inTrade, unfit, small, unmatched } = hidden;
+  const { shown, hidden } = applyFilters(all, { allTrades, allEarnings, allFit, minPremium, q, hideLeveraged });
+  const { thin, inTrade, unfit, small, leveraged, unmatched } = hidden;
   // Covered calls: manage judges a call unfit only for want of an uncovered 100-share lot, so when
   // every row is unfit the account holds none, and the empty list should say that plainly.
   const noLotHeld = list === "covered-calls" && all.length > 0 && all.every((r) => r.fit === false);
   const sorted = sortRows(shown, INCOME_LIST_SORTS.find((s) => s.id === sort.id), sort.reversed);
-  const { page, setOffset, setLimit } = usePage([list, data?.day, allTrades, allEarnings, allFit, minPremium, q, sort.id, sort.reversed], 48);
+  const { page, setOffset, setLimit } = usePage([list, data?.day, allTrades, allEarnings, allFit, hideLeveraged, minPremium, q, sort.id, sort.reversed], 48);
   const rows = sorted.slice(page.offset, page.offset + page.limit);
   const calls = list === "covered-calls";
   const farthest = Math.max(0, ...shown.map((r) => Math.abs(r.distanceFraction)));
@@ -300,14 +305,14 @@ export function OwnListTab({ list, tabs }: { list: IncomeList; tabs?: ReactNode 
 
   const sortChanged = sort.id !== "symbol" || sort.reversed;
   const changed =
-    (sortChanged ? 1 : 0) + (allTrades ? 1 : 0) + (allEarnings ? 1 : 0) + (data?.fitBasis && allFit ? 1 : 0) + (minPremium !== defaultFloor(list) ? 1 : 0) + (q !== "" ? 1 : 0);
+    (sortChanged ? 1 : 0) + (allTrades ? 1 : 0) + (allEarnings ? 1 : 0) + (data?.fitBasis && allFit ? 1 : 0) + (minPremium !== defaultFloor(list) ? 1 : 0) + (hideLeveraged ? 1 : 0) + (q !== "" ? 1 : 0);
   const reset = () => {
     void setSort({ id: "symbol", reversed: false });
     void writePref(`minPremium.${list}`, undefined);
-    clear(["trade", "earnings", "fit", "premium", "q"]);
+    clear(["trade", "earnings", "fit", "premium", "leveraged", "q"]);
   };
   const sortLabel = INCOME_LIST_SORTS.find((s) => s.id === sort.id)?.label ?? sort.id;
-  const hiddenTotal = thin + inTrade + unfit + small + unmatched;
+  const hiddenTotal = thin + inTrade + unfit + small + leveraged + unmatched;
 
   return (
     <ScreenerLayout>
@@ -327,6 +332,7 @@ export function OwnListTab({ list, tabs }: { list: IncomeList; tabs?: ReactNode 
               ...(allEarnings ? [] : ["no earnings"]),
               ...(data?.fitBasis && !allFit ? ["fits"] : []),
               minPremium === 0 ? "any premium" : `≥ $${minPremium.toLocaleString()}`,
+              ...(hideLeveraged ? ["no leveraged funds"] : []),
             ],
             note: data?.day
               ? `${shown.length} of ${all.length} names${
@@ -336,6 +342,7 @@ export function OwnListTab({ list, tabs }: { list: IncomeList; tabs?: ReactNode 
                         inTrade > 0 ? `${inTrade} with earnings in the trade` : "",
                         unfit > 0 ? `${unfit} that do not fit the account` : "",
                         small > 0 ? `${small} under $${minPremium.toLocaleString()}` : "",
+                        leveraged > 0 ? `${leveraged} leveraged` : "",
                         unmatched > 0 ? `${unmatched} not matching “${q}”` : "",
                       ]
                         .filter(Boolean)
@@ -372,6 +379,12 @@ export function OwnListTab({ list, tabs }: { list: IncomeList; tabs?: ReactNode 
                       onChange={(on) => set("fit", on ? null : "all")}
                     />
                   ) : null}
+                  <FilterSwitch
+                    label="Hide leveraged funds"
+                    description="Hide the declared leveraged, inverse and volatility funds. Off by default, so every row the list is judged on stays shown."
+                    on={hideLeveraged}
+                    onChange={(on) => set("leveraged", on ? "hide" : null)}
+                  />
                 </FilterGroup>
                 <FilterGroup title="premium floor" note="one contract's credit">
                   <PremiumSlider

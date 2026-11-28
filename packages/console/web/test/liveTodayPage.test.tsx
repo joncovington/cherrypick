@@ -6,6 +6,7 @@ import { LiveTodayView, LoopDetail, openAtMark, suiteBadgeText, unrealisedTitle 
 import { DayChains, bwbChains, meicChains } from "../src/pages/Live/LiveTodayOrders";
 import { expiredWords, handHasContent, handModel } from "../src/pages/Live/HandToday";
 import { inView } from "./viewTables";
+import { DryRunChip, DryRunTip } from "../src/pages/Live/DryRunChip";
 
 /**
  * The Live page's `today` tab. Pinned: a quiet day says plainly that nothing needs attention; an
@@ -127,6 +128,34 @@ const detailOf = (l: LiveTodayLoop) =>
   );
 
 describe("LiveTodayView", () => {
+  it("shows each loop's dry-run posture beside its arm chip, armed or not: live amber, unknown never dry run", () => {
+    const html = render(
+      payload({
+        loops: [
+          loop("flies"), // no dry-run setting: no chip
+          loop("meic", { dryRun: "dry-run" }),
+          loop("ladder", { dryRun: "live" }),
+          loop("meic.alt" as LiveTodayLoop["loop"], { dryRun: "unknown" }),
+        ],
+      }),
+    );
+    expect(html.match(/data-dry-run="/g)?.length).toBe(3);
+    expect(html).toMatch(/<span class="chip" data-dry-run="dry-run">dry run<\/span>/);
+    expect(html).toMatch(/<span class="chip chip-warn" data-dry-run="live">live<\/span>/);
+    expect(html).toMatch(/<span class="chip muted" data-dry-run="unknown">unknown<\/span>/);
+    expect(html).not.toMatch(/data-dry-run="unknown">dry run/);
+    expect(html).toContain('aria-label="What is a dry run?"');
+  });
+
+  it("the ? tip explains dry run in plain words once opened", () => {
+    const tip = renderToString(<DryRunChip state="dry-run" />);
+    expect(tip).not.toContain("live.dry_run"); // closed until pressed
+    const open = renderToString(<DryRunTip />).replace(/&rsquo;|’/g, "'");
+    for (const s of ["sends nothing", "already holds is still managed", "By hand in the module", "never from the console", "Unknown means"]) {
+      expect(open).toContain(s);
+    }
+  });
+
   it("says plainly when nothing needs attention", () => {
     const html = render(payload());
     expect(html).toContain("needs attention · 0");

@@ -147,7 +147,7 @@ describe("our short-put list", () => {
       }
     }
     const { hidden } = applyFilters(rows, { allTrades: false, allEarnings: false, allFit: false, minPremium: 25, q: "" });
-    expect(hidden).toEqual({ thin: 8, inTrade: 4, unfit: 2, small: 1, unmatched: 0 });
+    expect(hidden).toEqual({ thin: 8, inTrade: 4, unfit: 2, small: 1, leveraged: 0, unmatched: 0 });
     payload = { ...base(rows), fitBasis: { session: "2026-10-20", availableBp: 1000, basis: "cash" } };
     const html = render("/screeners/short-puts?premium=25");
     expect(html).toContain("1 of 16 names · 8 thin · 4 with earnings in the trade · 2 that do not fit the account · 1 under $25 hidden");
@@ -223,6 +223,17 @@ describe("our short-put list", () => {
     expect(symbols(html)).toEqual(["AAA", "TQQQ"]);
     expect(html).toMatch(/class="chip"[^>]*>leveraged</);
     expect(html.match(/>leveraged</g)?.length).toBe(1); // AAA carries no badge
+  });
+
+  it("hides leveraged funds only when asked: the toggle is off by default and says what it hid", () => {
+    payload = base([row({ symbol: "TQQQ", leveraged: "leveraged" }), row({ symbol: "SQQQ", leveraged: "inverse" }), row({ symbol: "AAA" })]);
+    expect(symbols(render())).toEqual(["AAA", "SQQQ", "TQQQ"]); // off: every row stays
+    const on = render("/screeners/short-puts?leveraged=hide");
+    expect(symbols(on)).toEqual(["AAA"]);
+    expect(on).toContain("2 leveraged hidden");
+    const { shown, hidden } = applyFilters(payload.rows, { allTrades: true, allEarnings: true, allFit: true, minPremium: 0, q: "", hideLeveraged: true });
+    expect(shown.map((r) => r.symbol)).toEqual(["AAA"]);
+    expect(hidden.leveraged).toBe(2);
   });
 
   it("keeps the builder's symbol order, never a yield order", () => {

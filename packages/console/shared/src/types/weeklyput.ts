@@ -87,6 +87,11 @@ export interface WeeklyputStatus {
   decisionWindow: string | null;
   /** The expiry whose entry session is today; null on any other day. */
   entryToday: string | null;
+  /** Today is an early close (a half day), which the module does not trade. */
+  halfDay: boolean;
+  /** The module's stored reason it will not enter today (`half_day_no_entries`), null when none. The
+   *  page words it; it never shows this string. */
+  entryRefused: string | null;
   nextCycle: string | null;
   nextEntrySession: string | null;
   arms: string[];

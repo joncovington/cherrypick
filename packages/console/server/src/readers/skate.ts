@@ -149,7 +149,14 @@ function row(v: unknown): SkateRow | null {
     stage: num(r["stage"]),
     monthly: str(r["monthly"]),
     bands: { fixed: bandRead(r, "fixed"), byExpiry: bandRead(r, "byExpiry") },
+    bothSides: { fixed: bothSidesOf(r, "fixed"), byExpiry: bothSidesOf(r, "byExpiry") },
   };
+}
+
+/** The file's own `both_sides` flag for a band; anything but a boolean (an older run) is null. */
+function bothSidesOf(r: Record<string, unknown>, band: SkateBand): boolean | null {
+  const v = rec(r["both_sides"])[FILE_BAND[band]];
+  return typeof v === "boolean" ? v : null;
 }
 
 function configOf(v: unknown): SkateConfig | null {
