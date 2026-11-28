@@ -43,12 +43,18 @@ export function registerLiveRoutes(app: FastifyInstance, config: ConsoleConfig):
     const meics: Array<[string, string | null]> = [["meic", null], ...meicLiveAccounts(config).map((l): [string, string | null] => [`meic.${l}`, l])];
     const dryRuns: Record<string, LiveDryRun> = {};
     await Promise.all([
+      // A posture that cannot be read is `unknown` for that loop; it never fails the page's arm state.
       ...meics.map(async ([id, login]) => {
-        dryRuns[id] = dryRunOfMeic(await readMeicReadiness(Date.now(), login));
+        dryRuns[id] = await readMeicReadiness(Date.now(), login).then(dryRunOfMeic, () => "unknown" as const);
       }),
-      readLadderLiveStatus().then((s) => {
-        dryRuns["ladder"] = dryRunOfLadder(s);
-      }),
+      readLadderLiveStatus().then(
+        (s) => {
+          dryRuns["ladder"] = dryRunOfLadder(s);
+        },
+        () => {
+          dryRuns["ladder"] = "unknown";
+        },
+      ),
     ]);
     return readLiveToday(config, new Date(), dryRuns);
   });

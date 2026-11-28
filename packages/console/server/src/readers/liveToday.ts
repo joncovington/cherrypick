@@ -733,8 +733,9 @@ export function dryRunOfMeic(r: LiveMeicReadiness): LiveDryRun {
 }
 
 /** The ladder's `--status` mode (already `live` only on an explicit `live.dry_run: false`); an unreadable status is unknown. */
-export function dryRunOfLadder(s: Pick<LadderLiveStatus, "ok" | "mode">): LiveDryRun {
-  return s.ok && s.mode !== null ? s.mode : "unknown";
+export function dryRunOfLadder(s: Pick<LadderLiveStatus, "ok" | "mode" | "dryRunStated">): LiveDryRun {
+  // A status that does not carry a boolean `dry_run` has said nothing: its `mode` is only the default reading.
+  return s.ok && s.mode !== null && s.dryRunStated === true ? s.mode : "unknown";
 }
 
 /** `dryRuns` is each loop's posture from its own status, keyed by loop id (the route reads them). A loop that

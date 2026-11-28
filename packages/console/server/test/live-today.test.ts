@@ -469,6 +469,20 @@ describe("readLiveToday", () => {
       // An older MEIC build that omits dry_run: not "false", not "true".
       setMeicStatusCaller(() => ({ ok: true, json: { ok: true, arm_ready: READY }, error: null }));
       expect((await today())["meic"]).toBe("unknown");
+      // The same for the ladder: a status without dry_run is the module's default reading, not its answer.
+      setLadderLiveCaller(() => ({ ok: true, json: { ok: true, ready: true, gates: [{ name: "arm.record", ok: true, reason: "ok", blocks: "all" }] }, error: null }));
+      resetLadderLiveStatusCache();
+      expect((await today())["ladder"]).toBe("unknown");
+    });
+
+    it("a status read that throws leaves the page up, that loop unknown", async () => {
+      setMeicStatusCaller(() => {
+        throw new Error("spawn failed");
+      });
+      setLadderLiveCaller(() => {
+        throw new Error("spawn failed");
+      });
+      expect(await today()).toEqual({ flies: null, meic: "unknown", bwb: null, ladder: "unknown" });
     });
 
     it("a second login reads its own status", async () => {
