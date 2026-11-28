@@ -182,8 +182,13 @@ def _held_where(as_of: str | None, now: str, entry_col: str, exit_col: str) -> t
     cannot be placed in time and is left out."""
     if as_of is None:
         return now, []
+    # A schema whose own test is `status = 'open'` writes only open and closed; any other status there
+    # is not a position this reader understands, so it is not guessed to be held.
+    known = (
+        "status IN ('open', 'closed')" if now == "status = 'open'" else "COALESCE(status, '') != 'cancelled'"
+    )
     return (
-        f"COALESCE(status, '') != 'cancelled' AND {entry_col} <= ? "
+        f"{known} AND {entry_col} <= ? "
         f"AND (({exit_col} IS NULL AND COALESCE(status, '') != 'closed') OR {exit_col} > ?)",
         [as_of, as_of],
     )
