@@ -76,7 +76,9 @@ single cache writer, guarded-live-pointer table) are only worth their failures, 
 by breaking the invariant on purpose and watching it report the right thing. Do the same for any new
 one, and drive it off what the system itself declares (a module's config example, its own
 `stream_requests` file) rather than a hand-kept list. A green check that cannot fire is worse than no
-check: it reads as coverage.
+check: it reads as coverage. A guard on a live-order path adds its mutant to
+`scripts/guard_mutants_plugin.py` in the same PR; a test fails a package that can place a live order and
+has none.
 
 **A correction to a study's replay is logged in the script.** A research script (`scripts/*_itemNN.py`)
 keeps `REPLAY_CORRECTIONS`: one entry per fix, with the date, the change, the reading that prompted it,

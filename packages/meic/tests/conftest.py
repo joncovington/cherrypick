@@ -69,13 +69,21 @@ def _isolated_home(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _today_is_not_a_quarter_end(monkeypatch):
+def _today_is_not_a_quarter_end(request, monkeypatch):
     """`tt execute_trade --live` refuses opening orders on a quarter end by the real clock, so the
-    live-submit tests went red on 2026-09-30, the day that guard landed. Pinned off here; the guard's
-    own tests pin it on."""
+    live-submit tests went red on 2026-09-30, the day that guard landed. Pinned off here; a test that
+    asks for `real_quarter_end` keeps the real check and sets the clock itself."""
+    if "real_quarter_end" in request.fixturenames:
+        return
     from cherrypick.meic import tt
 
     monkeypatch.setattr(tt, "_quarter_end_today", lambda: False)
+
+
+@pytest.fixture
+def real_quarter_end():
+    """Opt out of `_today_is_not_a_quarter_end`: the guard's own tests, which set the clock instead of
+    stubbing the check, so a guard mutant on the calendar is not masked."""
 
 
 @pytest.fixture(autouse=True)

@@ -55,6 +55,15 @@ beyond the latest release.
   (every option bid 0.05, ask 99.00), which a study read as a session. `fetch-chains` counts these
   requests as `not_trading` and sends none; the report gains `off_calendar` per symbol. Item 109's study
   skips those sessions. Nothing to do.
+- **MEIC's remaining live guards each have a guard mutant, a new live guard must add its own, and a hand
+  run of the guard check no longer reaches your chat.** The designated account, the quarter-end refusal,
+  the manual door's size cap, the one-contract limit, the account restriction and PDT blockers, the
+  resting stops and the manage-only tick on a failed snapshot now fail a test when broken (eleven new
+  mutants). A test fails a package that can place a live order and has no mutant. The guard check pushes
+  its WARNING to the notify channels only when the scheduled `guard-mutants` job runs it; a run by hand
+  reports on its own terminal, and a partial `--only` run no longer overwrites the state file. Three
+  MEIC arm-registry tests that failed on a configured machine now read a frozen copy of the roster
+  instead of the machine's own registry. Nothing to do.
 - **`queue-list` says why a lane is idle.** It reports each lane's running row and, when nothing runs,
   what the rest wait behind. The local lane counts only rows that are not waiting on a queued fetch, so
   "idle" there means no local work exists. A queued row also names where its chain of `after` rows ends.

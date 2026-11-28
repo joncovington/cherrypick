@@ -344,8 +344,8 @@ def test_live_takes_no_entry_on_a_quarter_end_session(tmp_path):
     broker = FakeBroker()
     snap = _entry_snapshot(date="2026-12-31", expiration="2026-12-31")
     summary = live_loop.run_once(_config(), snap, db_path, broker, live=True, log=lambda *_: None)
-    assert summary["entry"]["reason"] == "quarter_end_no_new_entries"
     assert broker.placed == []
+    assert summary["entry"]["reason"] == "quarter_end_no_new_entries"
 
 
 def test_live_entry_records_the_real_order_id(tmp_path):
@@ -992,7 +992,13 @@ def test_live_entries_are_one_contract_until_partial_fills_are_modelled(tmp_path
         cfg, _entry_snapshot(), _init_db(tmp_path), broker, live=True, log=lambda *_: None
     )
     assert broker.placed == [] and summary["entry"]["reason"] == "quantity_over_1"
+
+
+def test_arming_refuses_a_live_quantity_over_one():
+    """The arming command's side of the same cap: `arm_verdict` names it a blocker, so a day with a
+    two-lot config is never armed."""
     verdict = live_loop.arm_verdict({"supervisor_fresh": True, "quantity": 2})
+    assert verdict["ready"] is False
     assert verdict["blockers"] == ["live quantity 2 is over 1: partial fills are not modelled"]
     assert live_loop.arm_verdict({"supervisor_fresh": True, "quantity": 1})["ready"]
 

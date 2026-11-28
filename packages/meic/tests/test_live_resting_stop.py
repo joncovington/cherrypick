@@ -147,7 +147,7 @@ def test_the_loops_own_stop_cancels_the_resting_stop_before_its_close(tmp_path):
     )
     broker = FakeBroker()
     summary = live_loop.run_once(cfg, _stopping_snapshot(), db_path, broker, live=True, log=_quiet)
-    assert broker.cancelled[0] == "R1"
+    assert broker.cancelled == ["R1"]
     assert summary["closing"] == 1
     row = live_loop._trade_row("OPEN1", db_path)
     assert row["put_resting_stop_status"] == "cancelled" and row["put_stop_fill_status"] == "pending"

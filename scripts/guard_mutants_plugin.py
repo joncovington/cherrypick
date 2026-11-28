@@ -92,6 +92,68 @@ def _adapter_places_any_buy(self, spec, live):
     return execution.Broker.place(self, spec, live)
 
 
+async def _trading_account_first_listed(account_number=None):
+    """meic's `tt._trading_account` as it was before the designation: whichever account `_get_account`
+    resolves, the login's first listed when none is named, and any number typed on the command line."""
+    from cherrypick.meic import tt
+
+    return await tt._get_account(account_number)
+
+
+def _door_ignores_size():
+    """The manual door's `_manual_open_refusal` with every leg read as one contract: its halt, arm and
+    kill checks stay, the cap on an order wider than the loop would size to does not."""
+    from cherrypick.meic import tt
+
+    original = tt._manual_open_refusal
+
+    def patched(config, spec):
+        legs = [{**leg, "quantity": 1} for leg in spec.get("legs") or []]
+        return original(config, {**spec, "legs": legs})
+
+    return patched
+
+
+def _placed_nothing(*_args, **_kwargs):
+    return {"resting_placed": 0, "resting_failed": 0}
+
+
+def _polled_nothing(*_args, **_kwargs):
+    return {"resting_working": 0, "resting_filled": 0, "resting_dead": 0}
+
+
+def _cancel_never_confirmed(trade, side, broker, _db_path, _log):
+    """meic's `_clear_resting_stop` sending the cancel and going on whatever the broker answered: the
+    side's own close goes out beside a resting stop that may still be working."""
+    from cherrypick.meic import live_loop
+
+    oid = live_loop._resting_working(trade, side)
+    if oid and hasattr(broker, "cancel"):
+        broker.cancel(oid)
+    return True
+
+
+def _no_manage_snapshot(_symbol, _db_path, _broker, **_kwargs):
+    """meic's `_manage_snapshot` finding nothing held, so a failed entry snapshot fails the tick as it
+    did before the manage-only path: nothing is confirmed, stopped or closed on the held legs."""
+    report = {"open_trades": 0, "legs": 0, "sources": {"stream": 0, "rest": 0}, "unpriced": []}
+    return {}, report
+
+
+def _manage_unpriced_is_fine():
+    """meic's `_manage_snapshot` reporting every held leg priced, so a manage-only tick that could not
+    price one reads as having done its job."""
+    from cherrypick.meic import live_loop
+
+    original = live_loop._manage_snapshot
+
+    def patched(symbol, db_path, broker, **kwargs):
+        snapshot, report = original(symbol, db_path, broker, **kwargs)
+        return snapshot, {**report, "unpriced": []}
+
+    return patched
+
+
 def _features_read_ahead():
     """The real `feature_series`, except each session's close extremity is the NEXT session's: the
     one-bar look-ahead the range-features truncation guard exists to catch."""
@@ -422,6 +484,14 @@ REPLACEMENTS = {
     "kill_never_blocks": lambda: _kill_never_blocks,
     "never_tripped": lambda: _never_tripped,
     "adapter_places_any_buy": lambda: _adapter_places_any_buy,
+    "trading_account_first_listed": lambda: _trading_account_first_listed,
+    "door_ignores_size": _door_ignores_size,
+    "no_quantity_cap": lambda: 10**6,
+    "placed_nothing": lambda: _placed_nothing,
+    "polled_nothing": lambda: _polled_nothing,
+    "cancel_never_confirmed": lambda: _cancel_never_confirmed,
+    "no_manage_snapshot": lambda: _no_manage_snapshot,
+    "manage_unpriced_is_fine": _manage_unpriced_is_fine,
 }
 
 
@@ -1005,6 +1075,147 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.meic.tt",
         attr="_opens_position",
         replacement="always_true",
+    ),
+    # MEIC's remaining live guards (#1519): the account an order acts on, the quarter end, the manual
+    # door's size cap, the one-contract limit and the account's own restrictions.
+    Mutant(
+        id="meic-designated-account",
+        breaks="an order command acts on the login's first account, or on another than the designated one",
+        package="meic",
+        tests=(
+            "tests/test_tt_designated_account.py::test_an_explicit_account_number_must_be_the_designated_one",
+            "tests/test_tt_designated_account.py::"
+            "test_a_mutating_command_refuses_without_a_designated_account[adjust_order]",
+            "tests/test_tt_designated_account.py::"
+            "test_a_mutating_command_refuses_without_a_designated_account[close_position]",
+            "tests/test_tt_designated_account.py::"
+            "test_a_mutating_command_refuses_without_a_designated_account[execute_trade dry run]",
+            "tests/test_tt_designated_account.py::"
+            "test_a_mutating_command_refuses_without_a_designated_account[execute_trade live]",
+        ),
+        module="cherrypick.meic.tt",
+        attr="_trading_account",
+        replacement="trading_account_first_listed",
+    ),
+    Mutant(
+        id="meic-quarter-end",
+        breaks="a live open goes out on the last trading day of a quarter, at the manual door or in the loop",
+        package="meic",
+        tests=(
+            "tests/test_tt.py::test_cmd_execute_trade_refuses_a_live_open_on_a_quarter_end_session",
+            "tests/test_live_scaffold.py::test_live_takes_no_entry_on_a_quarter_end_session",
+        ),
+        module="cherrypick.core.calendar",
+        attr="is_quarterly_expiry",
+        replacement="always_false",
+    ),
+    Mutant(
+        id="meic-manual-size-cap",
+        breaks="the manual door lets an order through wider than the loop would size to",
+        package="meic",
+        tests=(
+            "tests/test_tt_manual_open_gate.py::test_a_reduced_verdict_refuses_an_order_wider_than_the_loop_would_enter",
+            "tests/test_tt_manual_open_gate.py::test_a_hand_written_limit_caps_a_normal_verdict_at_one",
+        ),
+        module="cherrypick.meic.tt",
+        attr="_manual_open_refusal",
+        replacement="door_ignores_size",
+    ),
+    Mutant(
+        id="meic-live-quantity-cap",
+        breaks="live enters, or is armed, with more than one contract while partial fills are not modelled",
+        package="meic",
+        tests=(
+            "tests/test_live_scaffold.py::test_live_entries_are_one_contract_until_partial_fills_are_modelled",
+            "tests/test_live_scaffold.py::test_arming_refuses_a_live_quantity_over_one",
+        ),
+        module="cherrypick.meic.live_loop",
+        attr="MAX_LIVE_QUANTITY",
+        replacement="no_quantity_cap",
+    ),
+    Mutant(
+        id="meic-live-restrictions",
+        breaks="a restricted or day-trade-starved account opens a new IC at the tick",
+        package="meic",
+        tests=(
+            "tests/test_live_restrictions_tick.py::test_a_restricted_account_opens_nothing[closing_only]",
+            "tests/test_live_restrictions_tick.py::test_a_restricted_account_opens_nothing[pdt_starved]",
+            "tests/test_live_restrictions_tick.py::test_an_account_on_another_login_is_read_without_asking",
+        ),
+        module="cherrypick.meic.live_loop",
+        attr="restriction_blockers",
+        replacement="no_blockers",
+    ),
+    # MEIC's resting stops and the manage-only path (#1520): what keeps a held IC managed.
+    Mutant(
+        id="meic-resting-stops-placed",
+        breaks="a confirmed live entry gets no resting stop at the broker",
+        package="meic",
+        tests=(
+            "tests/test_live_resting_stop.py::test_a_confirmed_entry_gets_a_resting_stop_on_each_side",
+            "tests/test_live_resting_stop.py::test_a_dead_resting_stop_is_placed_again",
+        ),
+        module="cherrypick.meic.live_loop",
+        attr="_place_resting_stops",
+        replacement="placed_nothing",
+    ),
+    Mutant(
+        id="meic-resting-stops-polled",
+        breaks="a resting stop the broker filled or killed is never read back",
+        package="meic",
+        tests=(
+            "tests/test_live_resting_stop.py::test_a_resting_stop_the_broker_filled_is_booked_the_same_tick",
+            "tests/test_live_resting_stop.py::test_a_dead_resting_stop_is_placed_again",
+        ),
+        module="cherrypick.meic.live_loop",
+        attr="_poll_resting_stops",
+        replacement="polled_nothing",
+    ),
+    Mutant(
+        id="meic-resting-stop-cancelled-first",
+        breaks="the loop closes or settles a side without cancelling its resting stop first",
+        package="meic",
+        tests=(
+            "tests/test_live_resting_stop.py::test_the_loops_own_stop_cancels_the_resting_stop_before_its_close",
+            "tests/test_live_resting_stop.py::test_a_resting_stop_that_will_not_cancel_blocks_the_loops_close",
+            "tests/test_live_resting_stop.py::test_settlement_waits_for_a_resting_stop_that_filled_at_the_close",
+        ),
+        module="cherrypick.meic.live_loop",
+        attr="_clear_resting_stop",
+        replacement="always_true",
+    ),
+    Mutant(
+        id="meic-resting-stop-cancel-confirmed",
+        breaks="the loop closes a side after a cancel the broker refused, beside a stop that may still work",
+        package="meic",
+        tests=(
+            "tests/test_live_resting_stop.py::test_a_resting_stop_that_will_not_cancel_blocks_the_loops_close",
+            "tests/test_live_resting_stop.py::test_settlement_waits_for_a_resting_stop_that_filled_at_the_close",
+            "tests/test_live_resting_stop.py::test_a_removed_resting_stop_frees_the_loops_close",
+        ),
+        module="cherrypick.meic.live_loop",
+        attr="_clear_resting_stop",
+        replacement="cancel_never_confirmed",
+    ),
+    Mutant(
+        id="meic-manage-only-fallback",
+        breaks="a tick whose entry snapshot fails manages nothing, so a held side runs past its stop",
+        package="meic",
+        tests=("tests/test_live_outage.py::test_a_tick_whose_entry_snapshot_fails_still_manages_a_held_ic",),
+        module="cherrypick.meic.live_loop",
+        attr="_manage_snapshot",
+        replacement="no_manage_snapshot",
+    ),
+    Mutant(
+        id="meic-manage-only-failure-reported",
+        breaks="a manage-only tick that could not price a held leg reports success to the watchdog",
+        package="meic",
+        tests=(
+            "tests/test_live_outage.py::test_a_manage_only_tick_that_cannot_price_a_held_leg_fails_loudly",
+        ),
+        module="cherrypick.meic.live_loop",
+        attr="_manage_snapshot",
+        replacement="manage_unpriced_is_fine",
     ),
     # The ladder's live path (#1337): its gates, its adapter's refusals and its order planner's limits.
     Mutant(

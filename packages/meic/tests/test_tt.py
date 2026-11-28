@@ -480,39 +480,65 @@ def _quarter_end_order(action):
     )
 
 
-def test_cmd_execute_trade_refuses_a_live_open_on_a_quarter_end_session(monkeypatch):
-    """The agent path's one door to the broker: an opening order is refused before any account is
-    read, and says why."""
-    monkeypatch.setattr(tt, "_live_trading_enabled", lambda: True)
-    monkeypatch.setattr(tt, "_quarter_end_today", lambda: True)
+def _clock_on(monkeypatch, day: date) -> None:
+    """`tt`'s clock reads `day` (10:00 ET). The quarter-end check itself runs, against the real
+    calendar: nothing here stubs `_quarter_end_today`, so a break in the calendar or in the check's
+    wiring shows (the guard mutant on `is_quarterly_expiry` is not masked)."""
+    from datetime import datetime
 
-    async def _no_account(account_number=None):
-        raise AssertionError("a refused open must never reach the account")
+    class _Day(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(day.year, day.month, day.day, 10, 0, tzinfo=tz)
 
-    monkeypatch.setattr(tt, "_get_account", _no_account)
-    args = type(
-        "Args", (), {"dry_run": False, "order": _quarter_end_order("Sell to Open"), "account_number": None}
-    )()
-    result = asyncio.run(tt.cmd_execute_trade(args))
-    assert result["ok"] is False and result["reason"] == "quarter_end_no_new_entries"
+    monkeypatch.setattr(tt, "datetime", _Day)
 
 
-def test_cmd_execute_trade_lets_a_live_close_through_on_a_quarter_end_session(monkeypatch):
-    """A close must always get through: flattening is not a new entry."""
-    monkeypatch.setattr(tt, "_live_trading_enabled", lambda: True)
-    monkeypatch.setattr(tt, "_quarter_end_today", lambda: True)
+QUARTER_END = date(2026, 3, 31)  # the first 2026 quarterly expiry (cherrypick.core.calendar)
+ORDINARY_DAY = date(2026, 7, 8)  # a Wednesday that is none of quarter end, FOMC or witching
+
+
+@pytest.fixture
+def account_reached(monkeypatch, real_quarter_end):
+    """Live enabled, and an account lookup that records arrival and stops there."""
     reached = []
 
     async def _account(account_number=None):
         reached.append(True)
-        raise RuntimeError("stop here")
+        raise RuntimeError("stop here -- the account was reached")
 
+    monkeypatch.setattr(tt, "_live_trading_enabled", lambda: True)
     monkeypatch.setattr(tt, "_get_account", _account)
-    args = type(
-        "Args", (), {"dry_run": False, "order": _quarter_end_order("Buy to Close"), "account_number": None}
-    )()
-    asyncio.run(tt.cmd_execute_trade(args))
-    assert reached, "a closing order must proceed to the broker on a quarter-end session"
+    return reached
+
+
+def _live_order_args(action):
+    return type("Args", (), {"dry_run": False, "order": _quarter_end_order(action), "account_number": None})()
+
+
+def test_cmd_execute_trade_refuses_a_live_open_on_a_quarter_end_session(monkeypatch, account_reached):
+    """The agent path's one door to the broker: an opening order is refused before any account is
+    read, and says why. Shown to fail by dropping `and _quarter_end_today()` from `cmd_execute_trade`
+    and by the guard mutant on the calendar."""
+    _clock_on(monkeypatch, QUARTER_END)
+    result = asyncio.run(tt.cmd_execute_trade(_live_order_args("Sell to Open")))
+    assert account_reached == [], "a refused open must never reach the account"
+    assert result["ok"] is False and result.get("reason") == "quarter_end_no_new_entries"
+
+
+def test_cmd_execute_trade_lets_a_live_close_through_on_a_quarter_end_session(monkeypatch, account_reached):
+    """A close must always get through: flattening is not a new entry."""
+    _clock_on(monkeypatch, QUARTER_END)
+    asyncio.run(tt.cmd_execute_trade(_live_order_args("Buy to Close")))
+    assert account_reached, "a closing order must proceed to the broker on a quarter-end session"
+
+
+def test_cmd_execute_trade_lets_a_live_open_through_on_an_ordinary_session(monkeypatch, account_reached):
+    """The control: the same open, one ordinary day, reaches the account, so the refusal above is the
+    quarter-end check and not the setup."""
+    _clock_on(monkeypatch, ORDINARY_DAY)
+    asyncio.run(tt.cmd_execute_trade(_live_order_args("Sell to Open")))
+    assert account_reached, "an open on an ordinary session must proceed to the broker"
 
 
 def test_cmd_execute_trade_dry_run_returns_without_submitting(monkeypatch):

@@ -31,10 +31,10 @@ def _ledger(tmp_path) -> str:
     return db_path
 
 
-def _tick(monkeypatch, tmp_path, db_path, cfg=None) -> tuple[dict, FakeBroker]:
+def _tick(monkeypatch, tmp_path, db_path, cfg=None, broker=None) -> tuple[dict, FakeBroker]:
     """One live `_tick` on a full entry snapshot, with everything it reaches outside the ledger
     pointed at the test. Returns the tick's entry decision and the broker."""
-    broker, logged = FakeBroker(), []
+    broker, logged = broker or FakeBroker(), []
     monkeypatch.setattr(live_loop, "_build_snapshot", lambda cfg, symbol: (_entry_snapshot(), None))
     monkeypatch.setattr(live_loop, "make_broker", lambda cfg, designated: broker)
     monkeypatch.setattr(live_loop._paths, "live_db_path", lambda: Path(db_path))
