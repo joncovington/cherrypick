@@ -288,7 +288,13 @@ def test_launcher_refuses_the_real_home_and_an_env_that_names_it(tmp_path):
 
 def test_launcher_drops_per_scope_directory_overrides_that_would_beat_the_demo_home(tmp_path):
     launcher = load_script("demo_console")
-    names = ("MEIC_DATA_DIR", "EARNINGS_LOGS_DIR", "TECHNICALS_DATA_DIR", "MEIC_CONFIG", "CHERRYPICK_MODULES_HOME")
+    names = (
+        "MEIC_DATA_DIR",
+        "EARNINGS_LOGS_DIR",
+        "TECHNICALS_DATA_DIR",
+        "MEIC_CONFIG",
+        "CHERRYPICK_MODULES_HOME",
+    )
     env = launcher.demo_env({"PATH": "p", **{n: "/real" for n in names}}, tmp_path)
     assert not [n for n in names if n in env]
     assert env["PATH"] == "p" and env["CHERRYPICK_HOME"] == str(tmp_path)

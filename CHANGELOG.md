@@ -13,6 +13,9 @@ beyond the latest release.
 
 ### What's new
 
+- **`upgrade` checks the release ZIP against a SHA-256 before it unzips, and four small security gaps close.**
+  The release workflow adds the digest of the tag's source ZIP to the published manifest; a ZIP upgrade that downloads something else stops before unzipping, and a manifest with no checksum warns and goes on if you confirm. A change of the live arm now journals `live_arm_change_attempted` first and `live_arm_changed` only once the config write landed (`live_arm_change_failed` otherwise). The demo console drops inherited per-scope data and log directory overrides, the replay token mask shows two characters instead of eight, and CI pins `pnpm/action-setup` to a commit. Nothing to do.
+
 - **A chain fetch no longer asks the vendor for a day that is not a trading session, and the store's
   quality report lists any such day it holds.** The vendor answers a Saturday with a placeholder market
   (every option bid 0.05, ask 99.00), which a study read as a session. `fetch-chains` counts these

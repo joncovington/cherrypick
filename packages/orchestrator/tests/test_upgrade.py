@@ -690,7 +690,6 @@ def test_restoring_over_a_sqlite_file_drops_the_newer_databases_sidecars(world):
     assert sqlite3.connect(db).execute("select count(*) from t").fetchone()[0] == 1
 
 
-
 # --------------------------------------------------------------------------- the release checksum
 def _pin(monkeypatch, value):
     monkeypatch.setitem(MANIFEST["releases"]["v0.13.0"], "archive_sha256", value)
