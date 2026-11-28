@@ -40,6 +40,8 @@ const status = (over: Partial<WeeklyputStatus> = {}): WeeklyputStatus => ({
   date: "2026-11-13",
   decisionWindow: "15:45-15:55 ET",
   entryToday: "2026-11-20",
+  halfDay: false,
+  entryRefused: null,
   nextCycle: "2026-11-20",
   nextEntrySession: "2026-11-13",
   arms: ["unhedged"],
@@ -137,6 +139,19 @@ describe("weeklyput's tabs", () => {
   it("names the next cycle and its entry session on a day with no entry", () => {
     const out = html(<WeeklyputToday data={payload()} status={status({ entryToday: null, date: "2026-11-16" })} loading={false} />);
     expect(out).toContain("entered on 2026-11-13");
+  });
+
+  it("says a half day is not traded, in words, never the stored reason", () => {
+    const half = status({ entryToday: null, decisionWindow: null, halfDay: true, entryRefused: "half_day_no_entries", date: "2026-11-27" });
+    const out = html(<WeeklyputToday data={payload()} status={half} loading={false} />);
+    expect(out).toContain("half day, not traded");
+    expect(out).not.toContain("half_day_no_entries");
+    expect(out).not.toContain("on an entry session");
+  });
+
+  it("an ordinary non-entry day keeps the calendar's own foot", () => {
+    const out = html(<WeeklyputToday data={payload()} status={status({ entryToday: null, date: "2026-11-16" })} loading={false} />);
+    expect(out).not.toContain("half day, not traded");
   });
 
   it("says the module's calendar could not be read rather than guessing", () => {

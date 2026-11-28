@@ -9,6 +9,8 @@ import { registerSecurity } from "../src/security.js";
 import { registerLiveRoutes } from "../src/routes/live.js";
 import { pairsOf, readLiveToday } from "../src/readers/liveToday.js";
 import { closePooledDbs } from "../src/readers/db.js";
+import { resetMeicStatusCache, setMeicStatusCaller } from "../src/services/meicStatusBridge.js";
+import { resetLadderLiveStatusCache, setLadderLiveCaller } from "../src/services/ladderLiveBridge.js";
 import { populatedLiveLedger } from "./ladderLiveFixture.js";
 
 /**
@@ -164,6 +166,16 @@ beforeEach(() => {
 
 afterEach(() => {
   closePooledDbs();
+  setMeicStatusCaller();
+  setLadderLiveCaller();
+});
+
+// The route asks each loop's own status; no test here may spawn the module's real command.
+beforeEach(() => {
+  setMeicStatusCaller(() => ({ ok: false, json: null, error: "stubbed" }));
+  setLadderLiveCaller(() => ({ ok: false, json: null, error: "stubbed" }));
+  resetMeicStatusCache();
+  resetLadderLiveStatusCache();
 });
 
 describe("readLiveToday", () => {
@@ -430,5 +442,42 @@ describe("readLiveToday", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().loops.map((l: { loop: string }) => l.loop)).toEqual(["flies", "meic", "bwb", "ladder"]);
     await app.close();
+  });
+
+  describe("each loop's dry-run posture", () => {
+    const READY = { ready: true, blockers: [], warnings: [] };
+    const gate = { name: "arm.record", ok: true, reason: "ok", blocks: "all" };
+    const today = async () => {
+      const app = Fastify();
+      registerSecurity(app);
+      registerLiveRoutes(app, config);
+      await app.ready();
+      const res = await app.inject({ method: "GET", url: "/api/live/today", headers: { host: "127.0.0.1:5070" } });
+      await app.close();
+      return Object.fromEntries((res.json().loops as Array<{ loop: string; dryRun: string | null }>).map((l) => [l.loop, l.dryRun]));
+    };
+
+    it("is each loop's own status answer: MEIC's dry_run, the ladder's mode; flies and bwb have none", async () => {
+      setMeicStatusCaller(() => ({ ok: true, json: { ok: true, arm_ready: READY, dry_run: true }, error: null }));
+      setLadderLiveCaller(() => ({ ok: true, json: { ok: true, ready: true, dry_run: false, gates: [gate] }, error: null }));
+      expect(await today()).toEqual({ flies: null, meic: "dry-run", bwb: null, ladder: "live" });
+    });
+
+    it("is unknown, never dry run, when a status cannot be read or does not say", async () => {
+      expect(await today()).toEqual({ flies: null, meic: "unknown", bwb: null, ladder: "unknown" });
+      resetMeicStatusCache();
+      // An older MEIC build that omits dry_run: not "false", not "true".
+      setMeicStatusCaller(() => ({ ok: true, json: { ok: true, arm_ready: READY }, error: null }));
+      expect((await today())["meic"]).toBe("unknown");
+    });
+
+    it("a second login reads its own status", async () => {
+      writeJson("config/meic.json", { live_accounts: { alt: { enabled: true, symbol: "XSP" } } });
+      writeJson("config.json", { broker: { logins: [{ name: "alt" }] } });
+      setMeicStatusCaller((login) => ({ ok: true, json: { ok: true, arm_ready: READY, dry_run: login ? false : true }, error: null }));
+      const got = await today();
+      expect(got["meic"]).toBe("dry-run");
+      expect(got["meic.alt"]).toBe("live");
+    });
   });
 });

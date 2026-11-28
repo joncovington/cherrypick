@@ -39,7 +39,9 @@ export function shapeReadiness(res: SpawnedJson): LiveMeicReadiness {
       })
     : [];
   // A verdict that says ready while it lists blockers contradicts itself: take the stricter reading.
-  return { ok: true, ready: verdict["ready"] && blockers.length === 0, blockers, warnings, openIcs, criticals };
+  // Only a literal boolean is the module's answer: a status that omits it (an older build) is `null`, never "false".
+  const dryRun = typeof doc["dry_run"] === "boolean" ? doc["dry_run"] : null;
+  return { ok: true, ready: verdict["ready"] && blockers.length === 0, blockers, warnings, openIcs, criticals, dryRun };
 }
 
 async function spawnCaller(login?: string | null): Promise<SpawnedJson> {

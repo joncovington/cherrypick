@@ -3,7 +3,9 @@ import type { ConsoleConfig } from "../config.js";
 import { readFliesLive } from "../readers/fliesLive.js";
 import { meicLiveAccounts, readMeicLive } from "../readers/meicLive.js";
 import { readMeicLiveGap } from "../readers/meicLiveGap.js";
-import { readLiveToday } from "../readers/liveToday.js";
+import type { LiveDryRun } from "@console/shared";
+import { dryRunOfLadder, dryRunOfMeic, readLiveToday } from "../readers/liveToday.js";
+import { readLadderLiveStatus } from "../services/ladderLiveBridge.js";
 import { readExecution } from "../services/executionBridge.js";
 import { readMeicReadiness } from "../services/meicStatusBridge.js";
 
@@ -35,7 +37,21 @@ export function registerLiveRoutes(app: FastifyInstance, config: ConsoleConfig):
   app.get("/api/live/meic/gap", async () => readMeicLiveGap(config));
   // Every live loop's day on one payload (the Live page's today tab), composed from the per-loop
   // readers above plus bwb's (`readers/liveToday.ts`). Nothing here touches an order.
-  app.get("/api/live/today", async () => readLiveToday(config));
+  // Each loop's dry-run posture is its own `--status` answer (MEIC's, per login, and the ladder's), read here
+  // through the bridges' memos so the page's poll does not spawn a process each time.
+  app.get("/api/live/today", async () => {
+    const meics: Array<[string, string | null]> = [["meic", null], ...meicLiveAccounts(config).map((l): [string, string | null] => [`meic.${l}`, l])];
+    const dryRuns: Record<string, LiveDryRun> = {};
+    await Promise.all([
+      ...meics.map(async ([id, login]) => {
+        dryRuns[id] = dryRunOfMeic(await readMeicReadiness(Date.now(), login));
+      }),
+      readLadderLiveStatus().then((s) => {
+        dryRuns["ladder"] = dryRunOfLadder(s);
+      }),
+    ]);
+    return readLiveToday(config, new Date(), dryRuns);
+  });
   // B10: each live arm's execution record by week (orchestrator `execution --json`). Read-only.
   app.get("/api/live/execution", async () => readExecution());
 }

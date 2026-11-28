@@ -38,10 +38,13 @@ import path from "node:path";
 import type Database from "better-sqlite3";
 import { sumIfAllRecorded } from "@console/shared";
 import type {
+  LadderLiveStatus,
   LiveAttentionItem,
+  LiveDryRun,
   LiveLoopId,
   LiveMeicBrokerHealth,
   LiveMeicOpenRow,
+  LiveMeicReadiness,
   LiveTodayArm,
   LiveTodayLoop,
   LiveTodayMoney,
@@ -722,7 +725,25 @@ export function meicOpenMark(open: LiveMeicOpenRow[]): LiveTodayLoop["mark"] {
   const at = marked.map((m) => m.at).sort()[0] ?? null;
   return { value, at, basis: MEIC_MARK_BASIS };
 }
-export function readLiveToday(config: ConsoleConfig, now: Date = new Date()): LiveTodayPayload {
+
+/** MEIC's `--status` `dry_run`, as the chip shows it: only the status's own boolean counts, anything else is unknown. */
+export function dryRunOfMeic(r: LiveMeicReadiness): LiveDryRun {
+  if (!r.ok || typeof r.dryRun !== "boolean") return "unknown";
+  return r.dryRun ? "dry-run" : "live";
+}
+
+/** The ladder's `--status` mode (already `live` only on an explicit `live.dry_run: false`); an unreadable status is unknown. */
+export function dryRunOfLadder(s: Pick<LadderLiveStatus, "ok" | "mode">): LiveDryRun {
+  return s.ok && s.mode !== null ? s.mode : "unknown";
+}
+
+/** `dryRuns` is each loop's posture from its own status, keyed by loop id (the route reads them). A loop that
+ *  has a dry-run setting but no answer here is `unknown`; flies and bwb have none. */
+export function readLiveToday(
+  config: ConsoleConfig,
+  now: Date = new Date(),
+  dryRuns: Readonly<Record<string, LiveDryRun>> = {},
+): LiveTodayPayload {
   const { session, minute } = etParts(now);
   const enabled = new Map(moduleIds(config).map((m) => [m.id, m.enabled]));
   const loops = [
@@ -735,7 +756,8 @@ export function readLiveToday(config: ConsoleConfig, now: Date = new Date()): Li
     (l): LiveTodayLoop => {
       // A MEIC live account on another login is MEIC's: the module's switch is its switch.
       const withSwitch = { ...l, moduleEnabled: enabled.get(l.loop.split(".")[0]!) ?? null };
-      return { ...withSwitch, retired: isRetired(withSwitch) };
+      const hasDryRun = l.loop === "ladder" || l.loop.split(".")[0] === "meic";
+      return { ...withSwitch, retired: isRetired(withSwitch), dryRun: hasDryRun ? (dryRuns[l.loop] ?? "unknown") : null };
     },
   );
   // One hand view per account that carries one (another broker login's accounts after the first).

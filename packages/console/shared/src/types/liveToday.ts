@@ -115,7 +115,14 @@ export interface LiveTodayLoop {
    *  held, orphaned or overdue item, a readable ledger. The tab shows it as one line; anything here
    *  brings the full row back. */
   retired: boolean;
+  /** The loop's dry-run posture from its own `--status` (`dry_run`): `dry-run` sends no entry, `live` sends
+   *  them, `unknown` when the status could not be read (never shown as dry run). null where the loop has no
+   *  such setting (flies and bwb ship off and refuse to arm while off). */
+  dryRun?: LiveDryRun | null;
 }
+
+/** What a loop's new entries do, as its own status says. */
+export type LiveDryRun = "dry-run" | "live" | "unknown";
 
 export type LiveAttentionKind =
   | "ledger_unreadable"

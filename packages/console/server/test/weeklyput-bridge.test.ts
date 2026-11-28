@@ -59,6 +59,10 @@ describe("weeklyputBridge normalisation", () => {
     expect(s.names).toEqual(["SPX", "SPY", "QQQ", "IWM"]);
     expect(s.awaitingClose).toHaveLength(1);
     expect(normaliseStatus({ ok: true, entry_today: null }).entryToday).toBeNull();
+    expect(s).toMatchObject({ halfDay: false, entryRefused: null });
+    expect(
+      normaliseStatus({ ok: true, half_day: true, decision_window: null, entry_today: null, entry_refused: "half_day_no_entries" }),
+    ).toMatchObject({ halfDay: true, decisionWindow: null, entryToday: null, entryRefused: "half_day_no_entries" });
   });
 
   it("maps a cycle with the module's own mean, and the names it left out", () => {

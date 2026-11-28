@@ -535,12 +535,23 @@ function ByArm({ s }: { s: MeicSummarySlice }) {
  * moved to the console (a `theme` pref), so the toggle the prototype carried is gone.
  * ------------------------------------------------------------------------- */
 
+/**
+ * What the toolbar says of the window's open trades. "Settling at the close" is true only while that
+ * close is still ahead, i.e. the window reaches today's session; on a past day an open row is one a
+ * settle missed, and the wording says so.
+ */
+export function openSuffix(openTrades: number, windowEnd: string | null, today: string = etToday()): string {
+  const live = windowEnd === null || windowEnd >= today;
+  return live ? `${openTrades} open, settling at the close` : `${openTrades} still open`;
+}
+
 function Toolbar({
   range,
   onRange,
   label,
   entriesFilled,
   openTrades,
+  windowEnd,
   canStepDay,
   onDayStep,
 }: {
@@ -549,6 +560,8 @@ function Toolbar({
   label: string;
   entriesFilled: number;
   openTrades: number;
+  /** The window's last session (null while unread). */
+  windowEnd: string | null;
   canStepDay: boolean;
   onDayStep: (delta: -1 | 1) => void;
 }) {
@@ -568,7 +581,7 @@ function Toolbar({
         </button>
         <span>
           {label} <span className="ts-muted">· {entriesFilled} settled</span>
-          {openTrades > 0 && <span className="ts-muted"> · {openTrades} open, settling at the close</span>}
+          {openTrades > 0 && <span className="ts-muted"> · {openSuffix(openTrades, windowEnd)}</span>}
         </span>
         <button aria-label="next day" disabled={!canStepDay || range !== "day"} onClick={() => onDayStep(1)} title={range !== "day" ? "day stepping applies to the day range" : undefined}>
           ›
@@ -644,6 +657,7 @@ export function MeicSummary({ mode, scope, day, onDayStep, canStepDay, today }: 
         label={windowLabel}
         entriesFilled={s?.hero.trades ?? 0}
         openTrades={s?.hero.openTrades ?? 0}
+        windowEnd={s?.window.to ?? s?.window.from ?? null}
         canStepDay={canStepDay}
         onDayStep={onDayStep}
       />

@@ -23,7 +23,8 @@ vi.mock("../src/lib/api", () => ({
   useMeicSummary: useMeicSummaryMock,
 }));
 
-const { MeicSummary } = await import("../src/pages/Meic/SummarySlide");
+const { MeicSummary, openSuffix } = await import("../src/pages/Meic/SummarySlide");
+const { etToday } = await import("../src/components/table/DateRange");
 
 const html = (node: React.ReactElement) =>
   renderToString(node).replace(/<!--\s*-->/g, "").replace(/&#x27;/g, "'");
@@ -139,6 +140,25 @@ describe("MeicSummary (trade summary, the one-read slide)", () => {
     expect(page).toContain("clean 90.0%");
     expect(page).toContain("double-stop 0.0%");
     expect(page).toContain("fee bar 26.5% of credit");
+  });
+
+  it("open rows on a past day read 'still open'; 'settling at the close' only while that close is ahead", () => {
+    const openHero = { ...slice().hero, openTrades: 2 };
+    useMeicSummaryMock.mockReturnValue({ data: slice({ hero: openHero }), isLoading: false, isError: false, error: null });
+    const past = text(render("/", <MeicSummary {...PROPS} />)); // the fixture's window is 2026-10-09
+    expect(past).toContain("2 still open");
+    expect(past).not.toContain("settling at the close");
+    const today = etToday();
+    useMeicSummaryMock.mockReturnValue({
+      data: slice({ hero: openHero, window: { from: today, to: today, label: "day" } }),
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
+    const live = text(render("/", <MeicSummary {...PROPS} />));
+    expect(live).toContain("2 open, settling at the close");
+    expect(openSuffix(1, "2026-10-09", "2026-10-10")).toBe("1 still open");
+    expect(openSuffix(1, "2026-10-10", "2026-10-10")).toBe("1 open, settling at the close");
   });
 
   it("a window with no usable capital says so — never a zero-gauge reading as 'broke even'", () => {

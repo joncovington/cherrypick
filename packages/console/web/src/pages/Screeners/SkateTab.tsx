@@ -166,6 +166,11 @@ export function skateModel(v: SkateView, c: SkateConfig | null): TradeCardModel 
             soft miss
           </span>
         )}
+        {v.bothSides ? (
+          <span className="chip chip-ok" title="The run marks this name: its best call and its best put both pass every soft threshold on this band, so the range brackets it from both sides at once">
+            both sides
+          </span>
+        ) : null}
         {under ? (
           <span className="chip chip-warn" title="The premium does not cover the fee to open: a loss even if it skates">
             under cost

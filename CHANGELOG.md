@@ -13,6 +13,12 @@ beyond the latest release.
 
 ### What's new
 
+- **The console says more about what a page is showing.** Live > today now shows a dry run, live or unknown chip on
+  MEIC's and the ladder's cards, armed or not, with a ? that explains a dry run; the value is each loop's own status, and
+  an unreadable status reads unknown, never dry run. The MEIC summary calls an open trade on a past day "still open"
+  instead of "settling at the close". The Weekly put page says "half day, not traded" on an early close. The skate tab
+  marks a name whose best call and put both pass, and the income lists get a Hide leveraged funds switch that starts off.
+  Nothing to do.
 - **A chain fetch no longer asks the vendor for a day that is not a trading session, and the store's
   quality report lists any such day it holds.** The vendor answers a Saturday with a placeholder market
   (every option bid 0.05, ask 99.00), which a study read as a session. `fetch-chains` counts these
