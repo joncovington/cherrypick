@@ -697,18 +697,34 @@ def _validation(res: dict) -> dict:
     ):
         if value:
             out[key] = value
-    return out
+    return _masked(out)
 
 
-def _validation_settled(prior: dict | None) -> bool:
-    """Whether the last row for this intent already holds the broker's answer: accepted, or refused
-    with its reasons. A call that never reached an answer (the broker unreachable) is tried again."""
+def _masked(value: dict) -> dict:
+    """The validation with any account number masked: the broker's own text (an error, a problem, a
+    warning) can name one, and the intents also go to the checks file, which the journal's masking
+    does not reach."""
+    return json.loads(_redact.redact_accounts(json.dumps(value, default=str)))
+
+
+def _prior_validation(prior: dict | None) -> dict | None:
+    """The validation the last row for this intent holds, or None."""
     try:
         old = json.loads((prior or {}).get("detail") or "null")
     except ValueError:
-        return False
+        return None
     v = old.get("validation") if isinstance(old, dict) else None
+    return v if isinstance(v, dict) else None
+
+
+def _answered(v: dict | None) -> bool:
+    """Whether a validation is the broker's answer: accepted, or refused with its reasons. A call that
+    never reached an answer (the broker unreachable, a timeout) is not, and is asked again."""
     return isinstance(v, dict) and (v.get("ok") is True or bool(v.get("problems")))
+
+
+def _validation_settled(prior: dict | None) -> bool:
+    return _answered(_prior_validation(prior))
 
 
 def _record_results(
@@ -727,8 +743,11 @@ def _record_results(
 
     With `validate` (the broker's dry run), a new intent to place is validated once and the answer
     journaled with it (`validation`); a standing intent is validated again only while it has no
-    answer, so a broker that was unreachable is asked again and one that answered is not."""
+    answer, so a broker that was unreachable is asked again and one that answered is not. After the
+    first call in a tick that gets no answer, the rest wait for the next tick: a broker that is down
+    would otherwise cost every intent its full call deadline, one after another, inside one tick."""
     intents: list[dict] = []
+    unreachable = False
     for r in results:
         a = r["action"]
         spec = a.get("spec") or {}
@@ -742,14 +761,20 @@ def _record_results(
             prior = live_db.last_dry_run(conn, arm, a["symbol"], reason)
             same = _same_terms(prior, detail)
             check = validate is not None and a["kind"] == "place" and bool(spec)
-            retry = check and same and not _validation_settled(prior)
-            if check and (not same or retry):
+            retry = check and same and not _validation_settled(prior) and not unreachable
+            if check and not unreachable and (not same or retry):
                 try:
                     detail["validation"] = _validation(validate(spec))
                 except Exception as exc:  # noqa: BLE001 -- a validation that raised is no answer, not a stop
-                    detail["validation"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+                    detail["validation"] = _masked({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+                unreachable = not _answered(detail["validation"])
+            elif check and _prior_validation(prior) is not None:
+                detail["validation"] = _prior_validation(prior)
             elif check:
-                detail["validation"] = json.loads(prior.get("detail") or "{}").get("validation")
+                detail["validation"] = {
+                    "ok": False,
+                    "error": "not asked this tick: the broker gave no answer",
+                }
             intents.append({"what": what, **detail})
             if not same:
                 _journal(conn, day=day, arm=arm, symbol=a["symbol"], mode="dry_run", reason=reason,

@@ -64,7 +64,7 @@
     "dry_run": true,
     "_dry_run_note": "On. While true the live tick sends nothing: it reads the broker, reconciles, and journals the orders it would place or cancel (decisions, mode dry_run), so a shadow week can be checked against paper's lots. Real orders need this set to false by hand AND every gate. Guarded: the Config page cannot write it.",
     "validate_dry_run": true,
-    "_validate_dry_run_note": "On. While dry_run is true, each new intent to place is sent to the broker's own dry run, which checks the order and states its buying-power effect and fees and places nothing; the answer is journaled with the intent (detail.validation). An answered intent is not asked again; one the broker could not be reached for is. Set to false to make no broker call for intents at all.",
+    "_validate_dry_run_note": "On. While dry_run is true, each new intent to place is sent to the broker's own dry run, which checks the order and states its buying-power effect and fees and places nothing; the answer is journaled with the intent (detail.validation). An answered intent is not asked again; one the broker could not be reached for is. Set to false to make no broker call for intents at all. Not guarded: it never places an order.",
     "arm": "session",
     "_arm_note": "The ONE paper arm whose rule would trade live money. It must be an enabled arm below. Switching it is a journaled measurement break.",
     "symbols": [

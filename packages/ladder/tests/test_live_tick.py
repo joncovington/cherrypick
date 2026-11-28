@@ -481,6 +481,30 @@ def test_an_unreachable_broker_is_asked_again_and_its_answer_lands_on_the_same_r
     assert len(world.broker.calls) == 2  # answered: not asked a third time
 
 
+def test_a_broker_that_gives_no_answer_is_asked_once_a_tick_not_once_an_intent(world):
+    """Each call can take its full deadline; one dead broker must not cost every intent that, in turn."""
+    world.cache.summary("SOXL", DAY, prev_day_close=50.0)
+    world.cache.quote("SOXL", 48.0, 48.1)
+    world.broker.validation_error = TimeoutError("broker down")
+    cfg = two_fund_config(dry_run=True)
+    tick(world, cfg, "09:00")
+    assert len(world.broker.calls) == 1  # the second fund's intent waits for the next tick
+    rows = decisions(world, "dry_run")
+    assert len(rows) == 2 and all(json.loads(r["detail"])["validation"]["ok"] is False for r in rows)
+    world.broker.validation_error = None
+    tick(world, cfg, "09:01")
+    assert len(world.broker.calls) == 3  # both asked again once the broker answers
+    assert all(json.loads(r["detail"])["validation"]["ok"] is True for r in decisions(world, "dry_run"))
+
+
+def test_an_account_number_in_the_brokers_text_is_masked_in_the_journal_and_the_checks(world):
+    world.broker.refuse_validation = "not permitted for account_number=5WX12345"
+    tick(world, live_config(dry_run=True), "09:00")
+    [row] = decisions(world, "dry_run")
+    assert "5WX12345" not in row["detail"] and "2345" in row["detail"]
+    assert "5WX12345" not in json.dumps(live_tick.read_checks()["intents"])
+
+
 def test_validation_can_be_switched_off(world):
     tick(world, live_config(dry_run=True, validate_dry_run=False), "09:00")
     [row] = decisions(world, "dry_run")

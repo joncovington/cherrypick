@@ -136,9 +136,11 @@ import (`orders.py` may import the one pure id reader). The `live` block in the 
   place goes to the broker's own dry run (`Broker.place(spec, live=False)`, core's preflight): the
   broker checks the order type and terms and states the buying-power effect and fees, and places
   nothing. The answer is journaled with the intent (`detail.validation`: ok, problems, buying power,
-  fees, warnings; never the account). An answered intent is not asked again; one the broker could not
-  be reached for is asked on the next tick, and its answer is written onto the same row. Cancels are
-  not validated. With it off, dry-run makes no broker call for intents.
+  fees, warnings; account numbers in the broker's text masked, in the journal and the checks file).
+  An answered intent is not asked again; one the broker could not be reached for is asked on the next
+  tick, and its answer is written onto the same row. After the first unanswered call in a tick the
+  rest wait for the next one, so a broker that is down costs one call deadline a tick, not one per
+  intent. Cancels are not validated. With it off, dry-run makes no broker call for intents.
 - **The tick (`live_loop --once`)**, in this order: the dead-man's switch (an arm record dated another
   day is removed before any broker read); the gates that block everything (any unmet and nothing is
   read, no adapter built); the orphan sweep; the splits; the reconcile; then, only inside
