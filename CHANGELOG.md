@@ -32,6 +32,10 @@ beyond the latest release.
   close; each guard's tests must fail under its mutant. New tests pin that the tick reads the halt flag
   and the breaker, and that every order door in `tt` reads the master switch. A change to meic now runs
   the `guards` CI job. Nothing to do.
+- **The ladder's live guards are checked by the guard mutants too.** Nine `ladder-*` mutants break the
+  dry-run default, the adapter's refusals (gates unmet, a buy under the halt flag), the tick's gate
+  check, the arm gate, half days, the drawdown breaker, the caps and the orphan sweep; each guard's
+  tests must fail under its mutant. Nothing to do.
 
 ## v0.14.1 — 2026-11-26 — held queue rows and corrupt windows
 Fixes to v0.14.0: one that stopped the research queue behind a fetch that could never finish, one

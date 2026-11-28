@@ -209,13 +209,16 @@ def test_status_without_an_account_names_the_gate(capsys, suite, write_config, m
 def test_once_with_the_gates_unmet_reads_nothing_and_builds_no_broker(capsys, suite, monkeypatch):
     from cherrypick.ladder import live_tick
 
-    built = []
-    monkeypatch.setattr(live_tick, "BrokerAdapter", lambda config: built.append(config))
+    class NeverBuilt:  # a class, not a lambda, so the tick's `isinstance` check still reads it
+        def __init__(self, config):
+            raise AssertionError("a broker was built with a gate unmet")
+
+    monkeypatch.setattr(live_tick, "BrokerAdapter", NeverBuilt)
     # A trading day, whatever day the test runs: on a weekend the tick stops at the calendar first.
     monkeypatch.setattr(live_tick._cal, "is_trading_day", lambda _day: True)
     code, out = run(capsys, "--once")  # the example as shipped: live.enabled is false
     result = json.loads(out)
-    assert code == 0 and built == []
+    assert code == 0
     assert result["skipped"] == "gates_unmet" and "live.enabled" in result["unmet_gates"]
     assert result["order_path"] is True and result["dry_run"] is True
 

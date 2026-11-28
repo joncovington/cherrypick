@@ -80,6 +80,18 @@ def _kill_never_blocks(*_args, **_kwargs):
     return {"state": killcriteria.NORMAL, "reasons": []}
 
 
+def _never_tripped(*_args, **_kwargs):
+    return {"tripped": False, "unrealized": 0.0, "limit": 0.0}
+
+
+def _adapter_places_any_buy(self, spec, live):
+    """The ladder adapter's `place` without its own check: core's placement, which reads only the gates
+    that block everything, so a buy goes out under the halt flag or on a half day."""
+    from cherrypick.core import execution
+
+    return execution.Broker.place(self, spec, live)
+
+
 def _features_read_ahead():
     """The real `feature_series`, except each session's close extremity is the NEXT session's: the
     one-bar look-ahead the range-features truncation guard exists to catch."""
@@ -408,6 +420,8 @@ REPLACEMENTS = {
     "no_blockers": lambda: _no_blockers,
     "no_orphans": lambda: lambda *_a, **_k: 0,
     "kill_never_blocks": lambda: _kill_never_blocks,
+    "never_tripped": lambda: _never_tripped,
+    "adapter_places_any_buy": lambda: _adapter_places_any_buy,
 }
 
 
@@ -991,6 +1005,115 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.meic.tt",
         attr="_opens_position",
         replacement="always_true",
+    ),
+    # The ladder's live path (#1337): its gates, its adapter's refusals and its order planner's limits.
+    Mutant(
+        id="ladder-live-dry-run-default",
+        breaks="the ladder sends orders when live.dry_run is missing or anything but a literal false",
+        package="ladder",
+        tests=(
+            "tests/test_live_tick.py::test_only_a_literal_false_leaves_dry_run",
+            "tests/test_live_tick.py::test_dry_run_sends_nothing_and_journals_the_intended_orders",
+        ),
+        module="cherrypick.ladder.live_tick",
+        attr="dry_run",
+        replacement="always_false",
+    ),
+    Mutant(
+        id="ladder-adapter-gates",
+        breaks="the ladder's adapter places a live order with dry_run on or an all-blocking gate unmet",
+        package="ladder",
+        tests=(
+            "tests/test_live_tick.py::test_the_adapter_refuses_a_live_placement_while_dry_run_is_on",
+            "tests/test_live_tick.py::test_a_gate_flipped_mid_tick_blocks_the_next_placement",
+            "tests/test_live_tick.py::test_a_sell_is_refused_once_the_arm_is_gone",
+        ),
+        module="cherrypick.ladder.live_tick",
+        attr="BrokerAdapter._unmet_for_all",
+        replacement="no_blockers",
+    ),
+    Mutant(
+        id="ladder-adapter-new-buys",
+        breaks="the ladder's adapter places a live buy under the halt flag",
+        package="ladder",
+        tests=("tests/test_live_tick.py::test_a_sell_passes_the_halt_flag_a_buy_does_not",),
+        module="cherrypick.ladder.live_tick",
+        attr="BrokerAdapter.place",
+        replacement="adapter_places_any_buy",
+    ),
+    Mutant(
+        id="ladder-tick-gates-unmet",
+        breaks="the ladder's tick reads the broker with a gate that blocks everything unmet",
+        package="ladder",
+        tests=(
+            "tests/test_live_tick.py::test_gates_unmet_means_the_broker_is_not_even_built",
+            "tests/test_live_loop.py::test_once_with_the_gates_unmet_reads_nothing_and_builds_no_broker",
+        ),
+        module="cherrypick.ladder.live_gates",
+        attr="unmet",
+        replacement="no_blockers",
+    ),
+    Mutant(
+        id="ladder-arm-record",
+        breaks="the ladder's arm gate holds with no record for today, a stale one, or past disarm_at",
+        package="ladder",
+        tests=(
+            "tests/test_live_gates.py::test_arm_record_refuses_when_missing_stale_or_past_disarm",
+            "tests/test_live_tick.py::test_a_sell_is_refused_once_the_arm_is_gone",
+        ),
+        module="cherrypick.core.live",
+        attr="should_disarm",
+        replacement="nothing",
+    ),
+    Mutant(
+        id="ladder-half-day-no-buys",
+        breaks="the ladder buys on an early-close session",
+        package="ladder",
+        tests=(
+            "tests/test_half_day.py::test_the_live_planner_places_no_buy_on_a_half_day_and_cancels_the_resting_ones",
+            "tests/test_half_day.py::test_a_half_day_is_a_new_buys_gate_not_a_stop_on_everything",
+        ),
+        module="cherrypick.core.calendar",
+        attr="is_early_close",
+        replacement="always_false",
+    ),
+    Mutant(
+        id="ladder-drawdown-breaker",
+        breaks="the ladder's drawdown breaker never trips, even on a lot with no mark",
+        package="ladder",
+        tests=(
+            "tests/test_orders.py::test_the_breaker_cancels_resting_buys_places_none_and_keeps_sells",
+            "tests/test_orders.py::test_a_missing_mark_trips_the_breaker",
+        ),
+        module="cherrypick.ladder.orders",
+        attr="breaker_state",
+        replacement="never_tripped",
+    ),
+    Mutant(
+        id="ladder-caps",
+        breaks="the ladder buys past its per-fund, total or group lot caps or its dollar ceiling",
+        package="ladder",
+        tests=(
+            "tests/test_orders.py::test_per_fund_cap_counts_open_lots_and_resting_buys",
+            "tests/test_orders.py::test_total_cap_across_funds",
+            "tests/test_orders.py::test_group_cap_holds_across_funds_in_a_group_but_not_outside_it",
+            "tests/test_orders.py::test_dollar_ceiling_counts_resting_buys_as_if_filled",
+            "tests/test_live_tick.py::test_the_total_cap_holds_across_funds",
+        ),
+        module="cherrypick.ladder.orders",
+        attr="_Occupancy.refusal",
+        replacement="nothing",
+    ),
+    Mutant(
+        id="ladder-orphan-sweep",
+        breaks="a ladder orphan sweep that cannot read the broker reads as clean and the tick goes on",
+        package="ladder",
+        tests=(
+            "tests/test_live_tick.py::test_an_orphan_sweep_that_cannot_look_is_unknown_and_stops_the_tick",
+        ),
+        module="cherrypick.ladder.live_tick",
+        attr="sweep_orphans",
+        replacement="no_orphans",
     ),
 )
 

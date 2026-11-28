@@ -261,6 +261,12 @@ import (`orders.py` may import the one pure id reader). The `live` block in the 
 - **The executor (`orders.Executor`)** applies a plan through a broker object handed to it, cancels
   first. Dry-run logs what it would send and calls the broker for nothing. A place whose outcome is
   uncertain stops the remaining places that run. It refuses an unarmed plan.
+- **Guard mutants.** The dry-run default, the adapter's refusals (gates that block everything, and a
+  buy under the halt flag), the tick's gate check, the arm gate, half days, the drawdown breaker, the
+  caps and the orphan sweep each have a `ladder-*` mutant in `scripts/guard_mutants_plugin.py`, run by
+  the `guards` CI job when ladder changes and by the pre-bell `guard-mutants` job. The tick's own
+  `armed_for == day` check is a second arm guard that the arm gate's mutant does not reach; the unarmed
+  tick tests pin it. A new live guard adds its own mutant.
 
 ## Boundaries
 
