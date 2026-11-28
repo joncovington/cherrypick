@@ -228,7 +228,7 @@ list and flags are in [docs/orchestrator-cli.md](../../docs/orchestrator-cli.md)
   dict, deriving no light jobs.
 - Both scripts are jobs like any other — spawned, never imported, never on the watchdog tick.
 - `_check_advice_enactment` runs `python -m cherrypick.advisor enactment` **as a subprocess** between
-  10:30 and 16:30 on trading days and reports only `not_enacted`; `no_artifact` is the ordinary state
+  10:30 and 16:30 on trading days other than early closes (no module enters on a half day), and reports only `not_enacted`; `no_artifact` is the ordinary state
   and stays silent.
 - The advice consumers (`cherrypick.core.advice`, each module's bounds, the loops' session-start
   re-validation) are untouched by any of this; absent advice means baseline.

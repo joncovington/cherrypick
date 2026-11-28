@@ -1587,6 +1587,17 @@ def _check_advice_enactment(cfg: dict[str, Any], now_et: datetime, is_trading: b
     # slot scores it anyway — a warning that arrives with the verdict is not an early warning.
     if not (time(10, 30) <= now_et.time() <= time(16, 30)):
         return []
+    # A half day is not tradeable: no module enters, so no loop records the decision an artifact
+    # asks for, and a module that decides after the 13:00 close never runs at all. Comparing would
+    # report every artifact issued for the session as dropped (2026-11-27, earnings, five times).
+    # A calendar that cannot be read falls through to the comparison.
+    try:
+        from cherrypick.core import calendar as _cal
+
+        if _cal.is_early_close(now_et.date()):
+            return []
+    except Exception:  # noqa: BLE001
+        pass
 
     session = now_et.date().isoformat()
     try:

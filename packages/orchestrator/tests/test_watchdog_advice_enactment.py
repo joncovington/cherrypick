@@ -128,6 +128,42 @@ def test_a_module_with_no_entry_time_is_judged_from_the_open(advisor):
     assert "flies" in finding.message
 
 
+EARNINGS_CFG = {
+    "capabilities": {"claude": True, "dolt": True},
+    "advisor": {"enabled": True},
+    "modules": {"earnings": {"enabled": True, "paper": {"entry_time": "15:45"}}},
+}
+
+
+def test_a_half_day_is_silent(advisor):
+    """2026-11-27 closed at 13:00 and no module enters on a half day, so earnings (deciding at
+    15:45) never ran and its artifact read `not_enacted` from 15:45 to 16:25. Nothing was dropped."""
+    advisor(_payload(earnings="not_enacted", meic="not_enacted"))
+    for hhmm in ((11, 0), (15, 50), (16, 25)):
+        when = datetime(2026, 11, 27, *hhmm, tzinfo=ET)
+        assert watchdog._check_advice_enactment(EARNINGS_CFG, when, True) == [], hhmm
+
+
+def test_the_ordinary_day_after_a_half_day_still_reports(advisor):
+    advisor(_payload(earnings="not_enacted"))
+    [finding] = watchdog._check_advice_enactment(
+        EARNINGS_CFG, datetime(2026, 11, 30, 15, 50, tzinfo=ET), True
+    )
+    assert "earnings" in finding.message
+
+
+def test_an_unreadable_calendar_still_compares(advisor, monkeypatch):
+    from cherrypick.core import calendar as cal
+
+    def broken(day):
+        raise OSError("calendar unreadable")
+
+    monkeypatch.setattr(cal, "is_early_close", broken)
+    advisor(_payload(meic="not_enacted"))
+    [finding] = watchdog._check_advice_enactment(CFG, MIDDAY, True)
+    assert "meic" in finding.message
+
+
 def test_it_is_silent_on_a_non_trading_day(advisor):
     advisor(_payload(meic="not_enacted"))
     assert watchdog._check_advice_enactment(CFG, MIDDAY, False) == []
