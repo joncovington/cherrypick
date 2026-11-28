@@ -43,7 +43,10 @@ expunged within 30 days of termination** (§8(e)). Two consequences shape the wh
   script (the correction log, an unfilled `RULE`, the `CHAIN`, `plan` and `study` writing the kit's
   verdict block) and its test file, whose rule test fails until the declaration fills `RULE`. Its
   chain fetches a sample of 20 paths and runs `study --smoke` on it (`smoke.json`, never a verdict)
-  before the full fetch, so a crash or an arm judging no trades shows in minutes (#1072).
+  before the full fetch, so a crash or an arm judging no trades shows in minutes (#1072). An arm
+  whose gate reads more history than the sample holds is named in the smoke's `warmup_arms` with
+  why; the queue excuses it only there and only on a smoke, and the smoke then refuses unless an
+  ungated arm traded (item 104's script is the example).
 - **A change to shared study code is reproduced before it merges.** From the PR's worktree (its
   packages first on `PYTHONPATH`), `python packages/backtest/scripts/reproduce_studies.py run`
   re-runs the standing sample (`SAMPLE`; `--studies` for others) by each study's last queue command

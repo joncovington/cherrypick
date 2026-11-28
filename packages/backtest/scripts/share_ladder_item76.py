@@ -7,7 +7,8 @@ strike rules, each paired against holding the same lot for its +4% target.
     python packages/backtest/scripts/share_ladder_item76.py report [--json PATH]   # results.md (local)
 
 `plan` reads item 29's `expirations.json` and the technicals history's daily bars, and writes
-`path_requests.json` (the input of `fetch-chain-paths`) and `plan.json` (the holdout's last session) under
+`path_requests.json` (the input of `fetch-chain-paths`) and `plan.json` (the holdout's last session, kept
+from a recorded `plan.json` on a re-plan) under
 the backtest results directory (results/research/item76/), never into the repo: the chains are licensed.
 `study` replays the arms and states the verdict; it reads item 29's expiries, the Treasury curves of item
 28 and the chain store.
@@ -701,10 +702,29 @@ def load_bars(sym: str) -> tuple[list[Bar], list[str]]:
     return bars_from(raw, splits), sorted(s.ex_date for s in splits)
 
 
+def holdout_end_for(recorded: dict | None, last_sessions: list[str]) -> tuple[str, bool]:
+    """The holdout's last session and whether it was kept: a recorded plan's, so a re-plan measures the
+    window the study was declared and run on; else the earlier of the names' last sessions. A recorded
+    holdout that is not a start and an end, or ends after the data, stops the plan rather than move it."""
+    if not recorded or not recorded.get("holdout"):
+        return min(last_sessions), False
+    h = recorded["holdout"]
+    if not (isinstance(h, list) and len(h) == 2 and all(isinstance(x, str) for x in h)):
+        raise SystemExit(f"plan.json's holdout {h!r} is not [start, end]: fix or remove it to re-plan")
+    last = min(last_sessions)
+    if h[1] > last:
+        raise SystemExit(f"plan.json's holdout ends {h[1]}, after the data's last session {last}")
+    return h[1], True
+
+
 def cmd_plan(args) -> int:
     expiries = s29.load_expiries()
     loaded = {sym: load_bars(sym) for sym in NAMES}
-    holdout_end = min(bars[-1].date for bars, _ in loaded.values())
+    recorded = _out_dir() / "plan.json"
+    holdout_end, kept = holdout_end_for(
+        json.loads(recorded.read_text(encoding="utf-8")) if recorded.exists() else None,
+        [bars[-1].date for bars, _ in loaded.values()],
+    )
     windows = {"design": DESIGN, "holdout": (HOLDOUT_START, holdout_end)}
     reqs, hospital = [], {}
     for sym, (bars, split_dates) in core_progress.track(
@@ -734,6 +754,7 @@ def cmd_plan(args) -> int:
             {
                 "requests": len(requests),
                 "holdout_end": holdout_end,
+                "holdout_end_kept": kept,
                 "hospital_lots": hospital,
                 "file": str(out),
             }

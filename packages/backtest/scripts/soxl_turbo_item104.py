@@ -683,13 +683,32 @@ def cmd_study(args) -> int:
         "inputs": read,
         "positions": {a: {s: runs[a][s].cycles for s in NAMES} for a in ARMS},
     })  # fmt: skip
+    report: dict = {}
     if args.smoke:
-        doc = {**doc, "smoke": True, "verdict": "smoke"}
+        doc = {**doc, "smoke": True, "verdict": "smoke", "warmup_arms": smoke_warmup_arms()}
+        report = smoke_refusal(runs)
     name = "smoke.json" if args.smoke else "results.json"
     path = Path(args.out) if args.out else out_dir() / name
     path.write_text(json.dumps(doc, indent=1, default=str), encoding="utf-8")
-    print(json.dumps({"written": str(path), "verdict": doc["verdict"]}))
-    return 0
+    print(json.dumps({"written": str(path), "verdict": doc["verdict"], **report}))
+    return 2 if report.get("refused") else 0
+
+
+def smoke_warmup_arms() -> dict[str, str]:
+    """The judged arms a smoke's sample cannot open, with why, for the research queue: every gated arm,
+    since its gate reads the trailing year's realised vol and skew, which a sample of paths does not hold."""
+    why = (
+        f"its gate reads {EXTRA_RULE['skew_min_readings']} prior skew readings and a "
+        f"{EXTRA_RULE['lookback']}-session realised vol, which the smoke's sample does not hold"
+    )
+    return dict.fromkeys(JUDGED, why)
+
+
+def smoke_refusal(runs: dict) -> dict:
+    """{"refused": why} when the ungated arms opened nothing on the sample: then the smoke proved no path
+    reads, and the excused gated arms prove nothing either. Empty when they opened a position."""
+    opened = sum(runs[a][s].counts.get("entries", 0) for a in REPORTED for s in runs[a])
+    return {} if opened else {"refused": "the ungated arms opened no position on the sample"}
 
 
 def main(argv: list[str] | None = None) -> int:
