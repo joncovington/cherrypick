@@ -1929,7 +1929,8 @@ def _check_config_loads(name: str, mcfg: dict[str, Any], now_et: datetime) -> li
     any day at any hour, once for each change to the config file's mtime and once a new day (a group
     `start` or a dated budget change can begin to apply on a later day); between those the answer is the
     cached one, so a quiet tick costs two file stats. A refusal is a finding only, never a restart. When the
-    check cannot be run or read, nothing is said and nothing cached."""
+    check gives no answer (it crashed, hung or printed nothing), nothing is said, and that no-answer is
+    kept for the day and the file's version so a hung check costs one run, not one a tick."""
     paper = mcfg.get("paper") or {}
     argv = paper["config_check_argv"] if "config_check_argv" in paper else _CONFIG_CHECK_DEFAULTS.get(name)
     if not argv:
@@ -1944,10 +1945,12 @@ def _check_config_loads(name: str, mcfg: dict[str, Any], now_et: datetime) -> li
         return [_mtime_ns(core_home.config_path(name)), _mtime_ns(path)]
 
     result = entry.get("result") if isinstance(entry.get("result"), dict) else None
+    # An entry with no result is a run that gave no answer: kept for the day and the file's version,
+    # so a check that hangs or crashes costs one run, not one per tick.
     if not (
-        result is not None
+        entry
         and entry.get("day") == day
-        and entry.get("fingerprint") == fingerprint(result.get("path"))
+        and entry.get("fingerprint") == fingerprint(result.get("path") if result else None)
     ):
         try:
             r = _run_module(cfgmod.module_root(mcfg, name), argv, timeout=30)
@@ -1955,12 +1958,18 @@ def _check_config_loads(name: str, mcfg: dict[str, Any], now_et: datetime) -> li
         except Exception:
             result = None
         if not isinstance(result, dict) or not isinstance(result.get("ok"), bool):
-            return []
-        state[name] = {"day": day, "fingerprint": fingerprint(result.get("path")), "result": result}
+            result = None
+        state[name] = {
+            "day": day,
+            "fingerprint": fingerprint(result.get("path") if result else None),
+            "result": result,
+        }
         try:
             util.atomic_write_json(state_path, state)
         except Exception:
             pass
+    if result is None:
+        return []
     if result["ok"]:
         return [Finding(f"{name}.config", OK, f"{label} config", "loads")]
     where = cfgmod.portable_path(result["path"]) if result.get("path") else "its config"

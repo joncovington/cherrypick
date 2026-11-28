@@ -76,9 +76,24 @@ def test_the_stdin_flag_reads_the_candidate(tmp_path, monkeypatch, capsys):
     import io
 
     path = _write(tmp_path, EXAMPLE.read_text(encoding="utf-8"))
-    monkeypatch.setattr("sys.stdin", io.StringIO(_stale_group_text()))
+    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(_stale_group_text().encode("utf-8"))))
     assert cli.main(["--config", path, "check", "--stdin"]) == 0
     assert json.loads(capsys.readouterr().out)["ok"] is False
+
+
+def test_non_ascii_candidate_text_is_read_as_utf8(tmp_path, monkeypatch, capsys):
+    """A note with an em dash is valid on any console code page: stdin is UTF-8, not the locale's."""
+    import io
+
+    doc = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+    doc["_note"] = "kept — as written"
+    raw = json.dumps(doc, ensure_ascii=False).encode("utf-8")
+    import types
+
+    # Only the byte stream: a read through the text layer (the locale's decoding) has nothing to read.
+    monkeypatch.setattr("sys.stdin", types.SimpleNamespace(buffer=io.BytesIO(raw)))
+    assert cli.main(["--config", _write(tmp_path, "{}"), "check", "--stdin"]) == 0
+    assert json.loads(capsys.readouterr().out)["ok"] is True
 
 
 def test_the_check_agrees_with_the_loop(tmp_path, capsys):

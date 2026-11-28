@@ -126,12 +126,16 @@ def test_a_cached_refusal_is_still_reported_each_tick(module, home):
     assert [check()[0].status for _ in range(3)] == [wd.WARN] * 3
 
 
-def test_a_check_that_cannot_run_says_nothing_and_caches_nothing(module, home):
+def test_a_check_that_gives_no_answer_says_nothing_and_is_not_rerun_every_tick(module, home):
     touch(home, STALE)
     module.fail = True
-    assert check() == []
+    assert [check() for _ in range(3)] == [[], [], []]
+    assert module.runs == 1
     module.fail = False
-    assert check()[0].status == wd.WARN
+    assert check() == []  # same day, same file: still the one no-answer
+    assert check(now=NEXT_EVENING)[0].status == wd.WARN  # a new day asks again
+    touch(home, GOOD)
+    assert check(now=NEXT_EVENING)[0].status == wd.OK
 
 
 def test_automations_is_checked_without_the_key_and_off_with_an_empty_one(module):

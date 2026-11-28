@@ -437,7 +437,9 @@ def cmd_check(args) -> int:
 
     from . import configcheck
 
-    return _print(configcheck.check(args.config, sys.stdin.read() if args.stdin else None))
+    # UTF-8 whatever the console's code page: the orchestrator writes the candidate that way.
+    text = sys.stdin.buffer.read().decode("utf-8", errors="replace") if args.stdin else None
+    return _print(configcheck.check(args.config, text))
 
 
 def cmd_replay_day(args) -> int:
