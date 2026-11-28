@@ -280,9 +280,17 @@ def set_live_arm(
     # overwrite (the new text was built from the old read), so the file must still be as it was read.
     if not _unchanged(path, old_text):
         return _refuse("changed", "the config changed while the loop's status was read; nothing was written")
-    if not _live.record_event(MODULE, "live_arm_changed", actor="config", from_arm=before, to_arm=arm):
+    # The attempt is journaled before the write (an unwritable journal stops the change), but only the
+    # row after the write says the arm changed, so the journal never claims a change that did not land.
+    fields = {"actor": "config", "from_arm": before, "to_arm": arm}
+    if not _live.record_event(MODULE, "live_arm_change_attempted", **fields):
         return _refuse("journal_unwritable", "the arm journal cannot be written, so the change was not made")
-    written = configedit.backup_and_write(Path(path), new_text, MODULE)
+    try:
+        written = configedit.backup_and_write(Path(path), new_text, MODULE)
+    except OSError as exc:
+        _live.record_event(MODULE, "live_arm_change_failed", **fields, error=type(exc).__name__)
+        return _refuse("write_failed", f"the config could not be written ({exc}); the live arm is unchanged")
+    _live.record_event(MODULE, "live_arm_changed", **fields)
     return {
         "ok": True,
         "changed": True,
