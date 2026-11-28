@@ -299,12 +299,17 @@ def reachable_sales(bars: list[Bar], lot: Lot, expiries: list[str], split_dates:
     a call can be sold on every session from the hospital day to the window's last that `next_sale` accepts,
     because a sale that finds no chain or no strike waits for the next session (`run_call_arm`), and a sale's
     reads run from it to its segment's end (the sale, then `last_quote` back from the end). `plan_lot`'s
-    path, which assumes every sale goes through, is one path among these."""
+    path, which assumes every sale goes through, is one path among these. Each session is accepted by
+    `next_sale` itself, so the plan and the arm cannot disagree on which sessions a sale can happen on.
+
+    Bounded by the window's end, not by `plan_lot`'s: a sale that waits moves every later call, so the
+    lot can end after the no-wait path would have, and no earlier bound holds for every store."""
     dates = [b.date for b in bars]
     for j in range(lot.hospital, last + 1):
-        exp = pick_expiry(dates[j], expiries)
-        if exp is None or _cut(dates, split_dates, j) == j:
+        sale = next_sale(dates, expiries, split_dates, j, j)
+        if sale is None:
             continue
+        _, exp = sale
         end, _ = segment_end(dates, j, exp, split_dates, last)
         yield j, exp, end
 
@@ -774,7 +779,7 @@ def cmd_study(args) -> int:
     rate_at = s29._rates()
     inputs = Inputs(_out_dir() / "path_requests.json")
     conn, _ = s29._chains()  # item 29's read-only connection; its own per-symbol reader is not used
-    result: dict = {"windows": {}, "lots": {}, "plan": plan}
+    result: dict = {"windows": {}, "lots": {}, "plan": plan, "corrections": list(REPLAY_CORRECTIONS)}
     per: dict = {w: {a: [] for a in ARMS + REPORTED} for w in windows}
     try:
         with core_progress.Reporter("share_ladder_item76-study") as rep:
