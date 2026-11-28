@@ -13,18 +13,18 @@ beyond the latest release.
 
 ### What's new
 
-- **A rebuilt past session reports what it carried past its close, from each ledger's own dates.**
-  `core.ledgers.OPEN_AS_OF_READERS` answers "which positions were held at the close of session S" for
-  all nine multi-day schemas, so review's `carried_overnight` and its capital at risk no longer come
-  from today's book (which dropped every position closed since) or from a stored copy. The stored-block
-  stopgap and its `carried_overnight_kept_from` stamp are gone. A rebuild of a past session can change
-  its carried figures, correcting numbers that were wrong. Nothing to do.
 - **The console says more about what a page is showing.** Live > today now shows a dry run, live or unknown chip on
   MEIC's and the ladder's cards, armed or not, with a ? that explains a dry run; the value is each loop's own status, and
   an unreadable status reads unknown, never dry run. The MEIC summary calls an open trade on a past day "still open"
   instead of "settling at the close". The Weekly put page says "half day, not traded" on an early close. The skate tab
   marks a name whose best call and put both pass, and the income lists get a Hide leveraged funds switch that starts off.
   Nothing to do.
+- **A rebuilt past session reports what it carried past its close, from each ledger's own dates.**
+  `core.ledgers.OPEN_AS_OF_READERS` answers "which positions were held at the close of session S" for
+  all nine multi-day schemas, so review's `carried_overnight` and its capital at risk no longer come
+  from today's book (which dropped every position closed since) or from a stored copy. The stored-block
+  stopgap and its `carried_overnight_kept_from` stamp are gone. A rebuild of a past session can change
+  its carried figures, correcting numbers that were wrong. Nothing to do.
 - **`account --set` and `--clear` refuse while a live loop is armed or holds a book.** The designated
   account cannot change under a live loop that is armed for today, or under one that holds a position or
   a working order (MEIC's main account manages its book even when it is not armed). The refusal is in
