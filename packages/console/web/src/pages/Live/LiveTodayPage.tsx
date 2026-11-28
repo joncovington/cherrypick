@@ -20,6 +20,7 @@ import { LoopOrders } from "./LiveTodayOrders";
 import { Section } from "../../components/Section";
 import { Meter, StateLine } from "./liveParts";
 import { GuideLink } from "../../components/GuideLink";
+import { DryRunChip } from "./DryRunChip";
 
 /**
  * The Live page's `today` tab (2026-10-15): every live loop's day on one page -- what is armed,
@@ -540,6 +541,7 @@ function LoopParentCard({
         <>
           {attention > 0 && <span className="chip chip-bad">{attention} need{attention === 1 ? "s" : ""} attention</span>}
           <span className={`chip ${l.arm.armed && !l.arm.pastDisarm ? "chip-ok" : ""}`}>{arm.text}</span>
+          {l.dryRun != null && <DryRunChip state={l.dryRun} />}
         </>
       }
     >

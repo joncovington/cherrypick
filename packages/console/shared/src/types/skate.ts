@@ -102,6 +102,9 @@ export interface SkateRow {
   stage: number | null;
   monthly: string | null;
   bands: Record<SkateBand, SkateBandRead>;
+  /** The file's `both_sides` (`skate.mark_both_sides`), per band: the name's best call AND best put both pass
+   *  every soft threshold. Read, never worked out from the sibling row; null on a run that does not carry it. */
+  bothSides: Record<SkateBand, boolean | null>;
 }
 
 export interface SkateConfig {

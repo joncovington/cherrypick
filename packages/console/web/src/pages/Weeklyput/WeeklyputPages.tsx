@@ -32,6 +32,7 @@ import {
   cycleRows,
   distanceToStrike,
   distanceWords,
+  entryRefusedWords,
   fmtBp,
   pickCycle,
   putModel,
@@ -155,7 +156,7 @@ export function WeeklyputToday({
                 ? "the module's calendar could not be read"
                 : entryToday !== null
                   ? `selling into the ${entryToday} expiry · window ${status.decisionWindow ?? "—"}`
-                  : `window ${status.decisionWindow ?? "—"} on an entry session`
+                  : (entryRefusedWords(status) ?? `window ${status.decisionWindow ?? "—"} on an entry session`)
           }
         />
         <FliesTile
