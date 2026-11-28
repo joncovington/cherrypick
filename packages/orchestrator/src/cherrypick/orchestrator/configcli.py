@@ -54,7 +54,12 @@ def _op_load(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]:
 def _op_save(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]:
     """Splice every edit into the file's text, then hand the result to the raw-save path — so a
     section's worth of edits is one backup, one atomic write, and one mtime check, and a refusal
-    part-way leaves the file untouched."""
+    part-way leaves the file untouched.
+
+    Refused before anything is spliced: a guarded pointer, and on a target held to an allow-list
+    (`configedit.EDITABLE`, the fields the Config page offers) a pointer outside it or a value of a
+    shape no page field takes. Switching MEIC off while one of its live accounts holds a book is
+    refused in the write path itself (`configedit.module_switch_refusal`), with its own code."""
     target = req.get("target")
     edits = req.get("edits")
     if not isinstance(target, str) or not isinstance(edits, list) or not edits:
@@ -67,6 +72,18 @@ def _op_save(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]:
         pointer = edit["pointer"]
         if pointer in guarded:
             return _err(f"{pointer} is guarded — {guarded[pointer]}", "guarded", pointer=pointer)
+        if not configedit.editable(target, pointer):
+            return _err(
+                f"{pointer} is not a field this surface edits on '{target}'; edit it by hand",
+                "guarded",
+                pointer=pointer,
+            )
+        if not configedit.editable_value(target, edit.get("value")):
+            return _err(
+                f"{pointer}: a page field takes a value or a list of strings, not this shape",
+                "guarded",
+                pointer=pointer,
+            )
 
     try:
         path = configedit._target_path(cfg, target)
@@ -87,6 +104,8 @@ def _op_save(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]:
     has = isinstance(expected, (int, float)) and not isinstance(expected, bool)
     result = configedit.apply_raw_save(cfg, target, text, int(expected) if has else None)
     if not result.get("ok"):
+        if result.get("code"):  # a refusal that names itself (the MEIC switch: not_flat, status_unreadable)
+            return result
         error = str(result.get("error", ""))
         code = "conflict" if "changed on disk" in error else "guarded" if "guarded" in error else "invalid"
         return {**result, "code": code}
