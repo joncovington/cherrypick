@@ -26,6 +26,9 @@ DEFAULT_PORT = 5070
 NODE_STUB = REPO / "scripts" / "demo_console_nokeyring.mjs"
 SERVER = REPO / "packages" / "console" / "server" / "dist" / "index.js"
 SECRETISH = re.compile(r"(TOKEN|SECRET|OAUTH|CLIENT_ID|BROKER|PASSWORD|CREDENTIAL)", re.I)
+# A per-scope directory override (cherrypick.core.home) wins over CHERRYPICK_HOME for its one scope, so
+# an inherited MEIC_DATA_DIR would point the demo at the real trade data. Drop every such name.
+SCOPE_OVERRIDE = re.compile(r"(_DATA_DIR|_LOGS_DIR|_CONFIG)$|^CHERRYPICK_MODULES_HOME$", re.I)
 
 
 class Refused(SystemExit):
@@ -65,8 +68,9 @@ def check(home: Path, real: Path | None = None, env_home: str | None = None) -> 
 
 
 def demo_env(base: dict[str, str], home: Path) -> dict[str, str]:
-    """The server's environment: this home, no keyring on either side, nothing credential-shaped inherited."""
-    env = {k: v for k, v in base.items() if not SECRETISH.search(k)}
+    """The server's environment: this home, no keyring on either side, nothing credential-shaped or
+    per-scope directory override inherited (those outrank CHERRYPICK_HOME)."""
+    env = {k: v for k, v in base.items() if not SECRETISH.search(k) and not SCOPE_OVERRIDE.search(k)}
     env["CHERRYPICK_HOME"] = str(home)
     env["CHERRYPICK_PYTHON"] = sys.executable
     env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
