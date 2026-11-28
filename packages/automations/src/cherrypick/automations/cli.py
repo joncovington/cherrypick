@@ -23,6 +23,10 @@
     conditions one automation's record by today's market (--name): its closed trades cut by each entry
                session's daily-bar trend and volatility (`core.marketregime`, from the stream cache),
                assembled and stamped by `core.regimecuts`, today's label set against each cut
+    check      would the paper loop refuse the config (or, with --stdin, the config text given there)?
+               Loads it as the loop does (`config.load_arms`): {ok} or {ok: false, error, path}. Writes
+               nothing: no ledger, no stream request. The watchdog runs it ahead of the open, and the
+               orchestrator's config save runs it on the candidate text
     reference-check  the Builder's pin of one Builder run as an automation's backtest reference (JSON on
                stdin: name, run; run null to unpin) checked: its problems and the references block a
                save would write. Writes nothing
@@ -426,6 +430,16 @@ def _builder_read(args, kind: str) -> int:
     return _print(out)
 
 
+def cmd_check(args) -> int:
+    """Would the paper loop refuse the config (or, with --stdin, the candidate text given there)? Loads
+    it as the loop does and writes nothing. Always exits 0: the answer is `ok`."""
+    import sys
+
+    from . import configcheck
+
+    return _print(configcheck.check(args.config, sys.stdin.read() if args.stdin else None))
+
+
 def cmd_replay_day(args) -> int:
     from datetime import date
 
@@ -468,6 +482,9 @@ def main(argv=None) -> int:
     sub.add_parser("groups-view").set_defaults(fn=cmd_groups_view)
     sub.add_parser("groups-check").set_defaults(fn=cmd_groups_check)
     sub.add_parser("groups-read").set_defaults(fn=cmd_groups_read)
+    p = sub.add_parser("check")
+    p.add_argument("--stdin", action="store_true", help="check the config text on stdin, not the file")
+    p.set_defaults(fn=cmd_check)
     sub.add_parser("reference-check").set_defaults(fn=cmd_reference_check)
     sub.add_parser("retire-check").set_defaults(fn=cmd_retire_check)
     p = sub.add_parser("ahead")

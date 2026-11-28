@@ -114,7 +114,9 @@ alone):
   and reason as `auth/suiteBridge.ts`). The guarded-pointer table, byte-span splicing that preserves
   `_note`/`_header` and key order, the timestamped backup and the atomic write all stay in
   `configedit.py`. **Never port any of that here** — a second copy of a live-safety rule is free to
-  drift.
+  drift. A save of the automations config is checked there too: the candidate text goes to the
+  automations module's `cli check --stdin`, and a config its paper loop would refuse comes back `invalid`
+  with the module's message and writes nothing (the page shows the refusal like any other).
   - **The Live page's arm switch is the one write that is not paper, and it ships off.** `live_arming`
     must be a literal `true` in `config/console.json` (unreadable is off), checked on every route
     (`routes/liveArming.ts`), not only by hiding the switch. The loops with a working switch are `meic`

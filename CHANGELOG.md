@@ -13,6 +13,13 @@ beyond the latest release.
 
 ### What's new
 
+- **A config the automations loop would refuse shows up before the session, and a save cannot write
+  one.** The loop loads its config only inside the session, so a stale group name refused every tick from
+  the evening before and the first alert came 45 minutes after the open. The new `cli check` loads the
+  config as the loop does and writes nothing. The watchdog runs it on any change to the config file and
+  once a day, and a refusal is a WARN naming the file and the message. Every save of `automations.json`
+  (the Config page, the settings tool, the Groups, Builder and retire saves) runs it on the candidate
+  text first and refuses what the loop would refuse. Nothing to do.
 - **A chain fetch no longer asks the vendor for a day that is not a trading session, and the store's
   quality report lists any such day it holds.** The vendor answers a Saturday with a placeholder market
   (every option bid 0.05, ask 99.00), which a study read as a session. `fetch-chains` counts these
