@@ -134,3 +134,10 @@ def test_held_readers_answer_the_0dte_schemas_intraday():
     held = ledgers.HELD_READERS["meic_ic"](conn)
     assert [(r["symbol"], r["arm"], r["session"]) for r in held] == [("SPX", "c", "2026-10-12")]
     assert set(ledgers.HELD_READERS) == set(ledgers.OPEN_READERS)
+
+
+def test_every_open_reader_has_an_as_of_reader_and_the_0dte_ones_answer_empty():
+    assert set(ledgers.OPEN_AS_OF_READERS) == set(ledgers.OPEN_READERS)
+    conn = sqlite3.connect(":memory:")
+    assert ledgers.OPEN_AS_OF_READERS["meic_ic"](conn, "2026-10-12") == []
+    assert ledgers.OPEN_AS_OF_READERS["fly_book"](conn, "2026-10-12") == []

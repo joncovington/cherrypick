@@ -147,7 +147,7 @@ REBUILD_LIMIT = 30
 
 def rebuild_session(session: str) -> None:
     """Rebuild one session's final set and its render, as `build --session <day> --final` does. The
-    stored `carried_overnight` is kept (`facts._keep_carried_overnight`), so a rebuild cannot wipe it.
+    carried block is read as of that session's close, so a rebuild gives the same answer on any day.
 
     A rebuild that would leave a module unreadable which the stored set had read is refused and the
     stored set stays: a ledger locked or mid-migration at 10:15 must not replace a good set with one

@@ -142,6 +142,15 @@ which is an accurate name for a persisted key and not the record's. An open reco
 is unknown carries None, like a closed one (until 2026-09-24 the open readers wrote 0.0, which a
 total then counted as a real, riskless position); the totals built from them sum what is known
 and say how much is not (`capital_unknown`).
+
+OPEN_AS_OF_READERS answers the same question for the close of a past session: `reader(conn, session)`
+reads each ledger's own entry and exit dates, so it gives the same answer on any later day, where
+OPEN_READERS gives only today's book. A position is held at the close of S if it was entered on or
+before S, never cancelled, and not closed on or before S: an exit on S means held at S's open and
+gone by its close, and an entry after S was not yet a position. The exit date is the module's own
+(`closed_session`, `exit_session`, `settle_session`, `sell_session`, or earnings' `closed_at` read as
+a local session). A closed row that never recorded its exit date cannot be placed in time and is left
+out. Its records are OPEN_READERS' records; the 0DTE schemas answer empty.
 """
 
 from __future__ import annotations
@@ -162,6 +171,27 @@ connect_ro = core_db.connect_ro
 #: calendars, pmcc and curve write neither today (open / short_settled / closed), so for them the
 #: filter is the same rule stated once.
 _NOT_ON_BOOK = "('closed', 'cancelled')"
+
+
+def _held_where(as_of: str | None, now: str, entry_col: str, exit_col: str) -> tuple[str, list]:
+    """The WHERE clause (and its parameters) for a ledger table's held positions. With no `as_of`, `now`
+    -- the schema's own "still on the book" test. With a session, the as-of rule (see the module docstring):
+    entered on or before that session, not cancelled, and either not closed at all or closed on a later
+    session. A row closed on the session itself was held at its open and not at its close, so it is not
+    here; one entered after it was not yet a position. A closed row that never recorded its exit session
+    cannot be placed in time and is left out."""
+    if as_of is None:
+        return now, []
+    # A schema whose own test is `status = 'open'` writes only open and closed; any other status there
+    # is not a position this reader understands, so it is not guessed to be held.
+    known = (
+        "status IN ('open', 'closed')" if now == "status = 'open'" else "COALESCE(status, '') != 'cancelled'"
+    )
+    return (
+        f"{known} AND {entry_col} <= ? "
+        f"AND (({exit_col} IS NULL AND COALESCE(status, '') != 'closed') OR {exit_col} > ?)",
+        [as_of, as_of],
+    )
 
 
 def _plus(a: float | None, b: float | None) -> float | None:
@@ -851,14 +881,15 @@ def _curve_closed(conn, start: str | None = None, end: str | None = None) -> lis
     ]
 
 
-def _curve_open(conn) -> list[dict]:
+def _curve_open(conn, as_of: str | None = None) -> list[dict]:
     """curve's `curve_positions` still on the book — a position lives ~30-45 DTE and carries
     overnight throughout. Capital at risk is the spread's max loss (defined risk); a
     `short_settled` position's delivered/received shares are the one leg that bound does not
     cover, per the module's own caveat."""
+    where, params = _held_where(as_of, f"status NOT IN {_NOT_ON_BOOK}", "entry_session", "closed_session")
     rows = conn.execute(
-        "SELECT symbol, arm, entry_max_loss, quantity, entry_session FROM curve_positions "
-        f"WHERE status NOT IN {_NOT_ON_BOOK}"
+        f"SELECT symbol, arm, entry_max_loss, quantity, entry_session FROM curve_positions WHERE {where}",
+        params,
     ).fetchall()
     return [
         {
@@ -914,10 +945,12 @@ def _contango_closed(conn, start: str | None = None, end: str | None = None) -> 
     ]
 
 
-def _contango_open(conn) -> list[dict]:
+def _contango_open(conn, as_of: str | None = None) -> list[dict]:
     """contango's open stint per arm: an arm always holds one fund, risk or cash, overnight."""
+    where, params = _held_where(as_of, "status = 'open'", "entry_session", "exit_session")
     rows = conn.execute(
-        "SELECT arm, symbol, shares, entry_mid, entry_session FROM contango_positions WHERE status = 'open'"
+        "SELECT arm, symbol, shares, entry_mid, entry_session FROM contango_positions WHERE " + where,
+        params,
     ).fetchall()
     return [
         {
@@ -986,10 +1019,12 @@ def _weeklyput_capital(r) -> float | None:
     return round(float(r["strike"]) * 100 * int(r["quantity"] or 1), 2)
 
 
-def _weeklyput_open(conn) -> list[dict]:
+def _weeklyput_open(conn, as_of: str | None = None) -> list[dict]:
     """weeklyput's open short puts: sold seven days before the expiry, so each is held overnight."""
+    where, params = _held_where(as_of, "status = 'open'", "entry_session", "settle_session")
     rows = conn.execute(
-        "SELECT arm, symbol, strike, quantity, entry_session FROM weeklyput_positions WHERE status = 'open'"
+        "SELECT arm, symbol, strike, quantity, entry_session FROM weeklyput_positions WHERE " + where,
+        params,
     ).fetchall()
     return [
         {
@@ -1048,11 +1083,13 @@ def _automations_closed(conn, start: str | None = None, end: str | None = None) 
     return out
 
 
-def _automations_open(conn) -> list[dict]:
+def _automations_open(conn, as_of: str | None = None) -> list[dict]:
     """The automations' open structures: a short-dated structure may be held overnight (the day-before-expiry
     fly, the 20-day spread), and the rest close the day they open."""
+    where, params = _held_where(as_of, "status = 'open'", "entry_session", "exit_session")
     rows = conn.execute(
-        "SELECT arm, symbol, capital, entry_session FROM automations_positions WHERE status = 'open'"
+        "SELECT arm, symbol, capital, entry_session FROM automations_positions WHERE " + where,
+        params,
     ).fetchall()
     return [
         {
@@ -1111,10 +1148,12 @@ def _ladder_closed(conn, start: str | None = None, end: str | None = None) -> li
     return out
 
 
-def _ladder_open(conn) -> list[dict]:
+def _ladder_open(conn, as_of: str | None = None) -> list[dict]:
     """ladder's unsold lots: no stop and no time limit, so a lot is held overnight, often for weeks."""
+    where, params = _held_where(as_of, "status = 'open'", "buy_session", "sell_session")
     rows = conn.execute(
-        "SELECT arm, symbol, entry_value, buy_session FROM ladder_positions WHERE status = 'open'"
+        "SELECT arm, symbol, entry_value, buy_session FROM ladder_positions WHERE " + where,
+        params,
     ).fetchall()
     return [
         {
@@ -1221,13 +1260,14 @@ def _bwb_closed(conn, start: str | None = None, end: str | None = None) -> list[
     ]
 
 
-def _bwb_open(conn) -> list[dict]:
+def _bwb_open(conn, as_of: str | None = None) -> list[dict]:
     """bwb's `bwb_positions` still on the book — the daily ladder holds ~5-7 concurrent positions
     per book at steady state, all carrying overnight through their ~7 DTE life. Capital at risk is
     the structure's defined max loss."""
+    where, params = _held_where(as_of, f"status NOT IN {_NOT_ON_BOOK}", "entry_session", "closed_session")
     rows = conn.execute(
-        "SELECT symbol, arm, entry_max_loss, quantity, entry_session FROM bwb_positions "
-        f"WHERE status NOT IN {_NOT_ON_BOOK}"
+        f"SELECT symbol, arm, entry_max_loss, quantity, entry_session FROM bwb_positions WHERE {where}",
+        params,
     ).fetchall()
     return [
         {
@@ -1319,38 +1359,50 @@ def _no_overnight(conn) -> list[dict]:
     return []
 
 
-def _earnings_open(conn) -> list[dict]:
+def _earnings_open(conn, as_of: str | None = None) -> list[dict]:
     """EarningsAgent's `trades` still open (closed_at NULL): defined-risk earnings structures entered
     one afternoon and carried over the earnings event to the next morning. `capital_at_risk` is the
     known max loss set at entry — the honest overnight-exposure number, since these have no realized
     P&L until they settle. `session` is the OPEN session (opened_at), so the digest for a day shows
     what that day put on, matching the earnings module's own 'Opened this session' EOD section."""
     arm = core_db.arm_column(conn, "trades")
+    # As of a session the dates are epochs, converted to a local session in Python (no SQL date
+    # bound, for the reason `_earnings_closed` gives): opened on or before it, and not closed on or
+    # before it. A row with no open time cannot be placed in time and is left out.
     rows = conn.execute(
-        f"SELECT symbol, {arm} AS arm, strategy, capital_at_risk, opened_at FROM trades"
-        " WHERE closed_at IS NULL"
+        f"SELECT symbol, {arm} AS arm, strategy, capital_at_risk, opened_at, closed_at FROM trades"
+        + ("" if as_of is not None else " WHERE closed_at IS NULL")
     ).fetchall()
-    return [
-        {
-            "arm": r["arm"] or EARNINGS_UNTAGGED,
-            "symbol": r["symbol"],
-            "strategy": r["strategy"],
-            "capital": r["capital_at_risk"],
-            "session": session_from_epoch(r["opened_at"]),
-        }
-        for r in rows
-    ]
+    out = []
+    for r in rows:
+        opened = session_from_epoch(r["opened_at"])
+        if as_of is not None:
+            closed = session_from_epoch(r["closed_at"]) if r["closed_at"] is not None else None
+            if not opened or opened > as_of or (closed is not None and (not closed or closed <= as_of)):
+                continue
+        out.append(
+            {
+                "arm": r["arm"] or EARNINGS_UNTAGGED,
+                "symbol": r["symbol"],
+                "strategy": r["strategy"],
+                "capital": r["capital_at_risk"],
+                "session": opened,
+            }
+        )
+    return out
 
 
-def _calendars_open(conn) -> list[dict]:
+def _calendars_open(conn, as_of: str | None = None) -> list[dict]:
     """calendars' `dc_positions` still on the book — a weekly structure carries overnight Monday
     through Friday AND over the weekend (the path book's longs), so this module needs the real
     overnight view the 0DTE modules are structurally spared. Capital at risk is the entry debit
     (defined max loss); a `short_settled` position's true remaining risk is smaller, but the debit
     stays the honest conservative bound without re-deriving marks here."""
+    where, params = _held_where(as_of, f"status NOT IN {_NOT_ON_BOOK}", "entry_session", "closed_session")
     rows = conn.execute(
         "SELECT symbol, arm, structure, entry_debit, quantity, entry_session FROM dc_positions "
-        f"WHERE status NOT IN {_NOT_ON_BOOK}"
+        f"WHERE {where}",
+        params,
     ).fetchall()
     return [
         {
@@ -1368,16 +1420,17 @@ def _calendars_open(conn) -> list[dict]:
     ]
 
 
-def _pmcc_open(conn) -> list[dict]:
+def _pmcc_open(conn, as_of: str | None = None) -> list[dict]:
     """pmcc's `pmcc_positions` still on the book — a held-long position lives about ten months (a
     retired weekly control one lived ~1–2 weeks) and carries overnight throughout, plus the
     assigned-shares weekend between a Friday settlement and the Monday disposal. Capital at risk is
     the net debit (defined max loss); a `short_settled` position's delivered shares are the one leg
     that bound does not cover, per the module's own caveat — the debit stays the honest conservative
     bound without re-deriving marks here."""
+    where, params = _held_where(as_of, f"status NOT IN {_NOT_ON_BOOK}", "entry_session", "closed_session")
     rows = conn.execute(
-        "SELECT symbol, arm, net_debit, quantity, entry_session FROM pmcc_positions "
-        f"WHERE status NOT IN {_NOT_ON_BOOK}"
+        f"SELECT symbol, arm, net_debit, quantity, entry_session FROM pmcc_positions WHERE {where}",
+        params,
     ).fetchall()
     return [
         {
@@ -1407,6 +1460,36 @@ OPEN_READERS = {
     "weeklyput_put": _weeklyput_open,
     "automations_trade": _automations_open,
     "ladder_lot": _ladder_open,
+}
+
+
+def _no_overnight_as_of(conn, session: str) -> list[dict]:
+    """The 0DTE schemas carried nothing past any session's close (see `_no_overnight`)."""
+    return []
+
+
+#: "Which positions were held at the close of session S", per schema: `reader(conn, session)`, read
+#: from the ledger's own entry and exit dates, so a past session answers the same on any later day.
+#: The records are `OPEN_READERS`' (same keys, `session` the entry session). The rule, once: a
+#: position is held at the close of S if it was entered on or before S, was never cancelled, and was
+#: not closed on or before S (an exit on S itself means held at S's open and gone by its close; an
+#: entry after S was not yet a position). Exit means the module's own exit date: `closed_session`
+#: (calendars, pmcc, curve, bwb), `exit_session` (contango, automations), `settle_session` (weeklyput:
+#: the expiry, though the close may be written the next morning), `sell_session` (ladder) and
+#: `closed_at` (earnings, an epoch read as a local session like its closed reader). A row marked
+#: closed that never recorded its exit date cannot be placed in time and is left out.
+OPEN_AS_OF_READERS = {
+    "meic_ic": _no_overnight_as_of,
+    "earnings": lambda conn, session: _earnings_open(conn, as_of=session),
+    "fly_book": _no_overnight_as_of,
+    "dc_week": lambda conn, session: _calendars_open(conn, as_of=session),
+    "pmcc": lambda conn, session: _pmcc_open(conn, as_of=session),
+    "curve_vx": lambda conn, session: _curve_open(conn, as_of=session),
+    "bwb_132": lambda conn, session: _bwb_open(conn, as_of=session),
+    "contango_etf": lambda conn, session: _contango_open(conn, as_of=session),
+    "weeklyput_put": lambda conn, session: _weeklyput_open(conn, as_of=session),
+    "automations_trade": lambda conn, session: _automations_open(conn, as_of=session),
+    "ladder_lot": lambda conn, session: _ladder_open(conn, as_of=session),
 }
 
 

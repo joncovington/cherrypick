@@ -34,12 +34,13 @@ they cannot disagree.
   with no breaks table reports `null`, not `[]`, so a trend cannot assume continuity it never verified.
 - **A session is `provisional` before it is `final`.** 0DTE modules complete at the close; earnings
   settles the next morning, so session D is finalised on D+1.
-- **A rebuild of a final set keeps its `carried_overnight`.** The block is read from the book as it
-  stands now, so a past session's carried positions, closed since, would drop out and the rebuild would
-  write 0 and null. `build` keeps each module's stored block and stamps `carried_overnight_kept_from`
-  (the stored set's `generated_at`). A ledger correction that itself changes what was carried leaves the
-  block stale, and a block already wrong stays wrong: delete the session's `eod-<session>.json` before the
-  rebuild to recompute it from the book as it stands.
+- **`carried_overnight` is read as of the session's close.** `build_module_facts` asks
+  `core.ledgers.OPEN_AS_OF_READERS` which positions were held at that close (rule in the ledgers module
+  docstring), so a rebuild of a past session answers what it did on the day, however much has closed
+  since, and a ledger correction that changes what was held shows in the rebuild. The block is the
+  positions the session put on and held past its close. The provisional pass and the 10:15 final pass
+  read the same way, so earnings' overnight settlement does not drop a position from session D's set.
+  A row closed with no exit date recorded cannot be placed in time and is left out.
 - **Every module with a `core.ledgers` reader is reviewed.** A module with no results reports as such;
   being absent is a different, wrong statement. `tests/test_module_coverage.py` drives off `READERS`
   and fails on a reader with no `MODULES` entry, on a reviewed module naming a nonexistent schema, and
