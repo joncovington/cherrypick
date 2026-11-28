@@ -282,8 +282,9 @@ filename; override with `paper.sla_state_prefix`.
   held to the packages with a `live_loop.py` by a test; it labels, it never decides a gate), its designated live account (masked, via keyring), and the suite
   **halt flag**, `state/halt-live.flag`, whose *presence* is the signal (path defined by
   `cherrypick.core.home.halt_flag_path()`, which the live loops poll; `liveops.halt_flag_path()`
-  mirrors it). It writes **exactly one thing: the halt flag**, via `set_halt` (create to halt, delete
-  to clear), so a stop is reachable from a surface a human is looking at; the console's halt toggle
+  mirrors it). It writes **exactly one thing: the halt flag**, via `set_halt` (create to halt, in one
+  call; delete to clear, only with `confirm` the typed `RESUME LIVE`, checked there so the settings
+  tool and the console's bridge are both held to it), so a stop is reachable from a surface a human is looking at; the console's halt toggle
   routes through it. It never writes `enable_live_trading`, a module's config or code, or an order.
   **The halt stops new live risk only**: every live loop refuses new entries (and bwb
   add-ons) while it is up, and still confirms fills, manages working orders, stops and closes, and
@@ -333,7 +334,9 @@ filename; override with `paper.sla_state_prefix`.
   declared live gate is not refused. Guarded fields render read-only with a pointer to their CLI path,
   so this surface can never arm or de-risk live trading. A secret in a POST body goes straight through
   `secretsops.py` to `CredentialStore.set_secret` / `notify.secrets.set_webhook` and is dropped —
-  never logged, written or echoed; GET responses carry only status booleans and masked accounts. It
+  never logged, written or echoed; GET responses carry only status booleans and masked accounts.
+  `account_number` is shown, never written or deleted here: the live account is chosen against the
+  broker's own list by `account` (below), so `secretsops` refuses both as `guarded`. It
   places no order and runs only when a human starts it in the foreground (`--organize` is its only
   other job).
 - **`configcli.py`** is the same two modules for non-Python callers (the console): one JSON request on

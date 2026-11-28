@@ -144,7 +144,8 @@ describe("the halt flag's friction is asymmetric", () => {
     fakeBridge({ ok: true, present: false });
     const res = await post("/api/config/lock", { present: false, confirm: RESUME_CONFIRMATION });
     expect(res.statusCode).toBe(200);
-    expect(seen[0]).toEqual({ op: "set_halt", present: false });
+    // The phrase rides through: the orchestrator checks it again.
+    expect(seen[0]).toEqual({ op: "set_halt", present: false, confirm: RESUME_CONFIRMATION });
     // The response is the freshly-read lock status, so the hero can't show a stale state.
     expect(res.json()).toHaveProperty("modules");
   });

@@ -8,7 +8,8 @@ status-shaped: `secrets_status()` booleans, webhook set/not-set strings, and mas
 
 The writable service list is DERIVED (the shared suite login plus each configured module's
 `keyring_service`), never taken free-form from a client, and keys are restricted to the store's own
-`ALL_SECRETS`. Legacy read-only services (e.g. `tastytrade-mcp`) show through the stores' existing
+`ALL_SECRETS`, less `account_number`: the live account is chosen against the broker in `accounts`,
+never typed here. Legacy read-only services (e.g. `tastytrade-mcp`) show through the stores' existing
 fallback chain but are never a write target. Pure keyring logic only: no HTTP here.
 """
 
@@ -123,19 +124,33 @@ def _store_for(cfg: dict[str, Any], service: str, store_factory=CredentialStore)
 
 
 def _result(service: str, key: str, store: CredentialStore) -> dict[str, Any]:
-    out: dict[str, Any] = {"ok": True, "service": service, "key": key, "status": store.secrets_status()}
+    return {"ok": True, "service": service, "key": key, "status": store.secrets_status()}
+
+
+ACCOUNT_REFUSAL = (
+    "the live account is not written here: choose it against the broker's own list with"
+    " `run.py account --module <m> --set <last4>` (no --module for the suite's shared account),"
+    " or the console's onboarding"
+)
+
+
+def _account_refusal(key: str) -> dict[str, Any] | None:
+    """`account_number` is where a live loop sends orders. A free-typed value here is checked
+    against nothing, and deleting it silently returns the module to the SDK's default account, so
+    both go through the broker-checked designation in `accounts` instead. Status still shows it."""
     if key == ACCOUNT_NUMBER:
-        acct = store.get_secret(ACCOUNT_NUMBER)
-        out["account"] = mask_account(acct) if acct else None
-        out["hint"] = "for broker-verified designation use: cherrypick account --module <m> --set <last4>"
-    return out
+        return {"ok": False, "error": ACCOUNT_REFUSAL, "code": "guarded"}
+    return None
 
 
 def set_secret(cfg: dict[str, Any], service: str, key: str, value: str, store_factory=CredentialStore):
     """Store one secret in one service's own namespace. The value is used exactly once, for the
-    keyring write, and never appears in the return value or anywhere else."""
+    keyring write, and never appears in the return value or anywhere else. `account_number` is
+    refused (`_account_refusal`)."""
     if key not in ALL_SECRETS:
         return {"ok": False, "error": f"unknown secret key: {key!r} (known: {list(ALL_SECRETS)})"}
+    if refused := _account_refusal(key):
+        return refused
     if not isinstance(value, str) or not value.strip():
         return {"ok": False, "error": "value must be a non-empty string"}
     try:
@@ -149,6 +164,8 @@ def set_secret(cfg: dict[str, Any], service: str, key: str, value: str, store_fa
 def delete_secret(cfg: dict[str, Any], service: str, key: str, store_factory=CredentialStore):
     if key not in ALL_SECRETS:
         return {"ok": False, "error": f"unknown secret key: {key!r} (known: {list(ALL_SECRETS)})"}
+    if refused := _account_refusal(key):
+        return refused
     try:
         store = _store_for(cfg, service, store_factory)
         store.delete_secret(key)

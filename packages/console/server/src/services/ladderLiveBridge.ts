@@ -5,7 +5,7 @@ import { spawnModuleCliAsync, type SpawnedJson } from "./moduleCli.js";
 
 /**
  * The ladder's live readiness, read from the module that owns it (`python -m
- * cherrypick.ladder.live_loop --status`): the nine gates each with its reason, dry-run or live, armed
+ * cherrypick.ladder.live_loop --status`): the ten gates each with its reason, dry-run or live, armed
  * today, the halt flag, anything an uncertain submit still holds, and the last tick's checks (the
  * positions cross-check, the declared splits, the standing dry-run intents). Whether the loop may act
  * is a derivation over the config, the suite switch, the arm record, the designated account and the

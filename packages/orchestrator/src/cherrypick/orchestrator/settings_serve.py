@@ -153,7 +153,9 @@ def _make_handler(cfg: dict[str, Any], csrf_token: str, port: int):
             if path == "/api/webhook/delete":
                 return secretsops.delete_webhook(str(body.get("channel", "")))
             if path == "/api/halt/set":
-                return liveops.set_halt(bool(body.get("present")))
+                confirm = body.get("confirm")
+                confirm = confirm if isinstance(confirm, str) else None
+                return liveops.set_halt(bool(body.get("present")), confirm)
             return {"ok": False, "error": "unknown route"}
 
     return _Handler
@@ -296,13 +298,19 @@ async function renderHalt() {
   bar.innerHTML = `<span>${label}</span>
     <button id="haltbtn">${halted ? "Clear halt" : "Halt live trading now"}</button>`;
   document.getElementById("haltbtn").onclick = async () => {
-    const prompt = halted
-      ? "Clear the suite halt flag? Live loops can open new entries again on their next tick."
-      : "Set the suite halt flag? This blocks NEW live entries on every module — open positions " +
-        "still follow their normal hold-to-settlement rules. It does not flip enable_live_trading " +
-        "and does not touch any module's code or config.";
-    if (!confirm(prompt)) return;
-    const res = await post("/api/halt/set", {present: !halted});
+    const body = {present: !halted};
+    if (halted) {
+      // The server checks the phrase too; this prompt only collects it.
+      const typed = prompt("Clear the suite halt flag? Live loops can open new entries again on " +
+        "their next tick.\n\nType RESUME LIVE to clear it.");
+      if (typed === null) return;
+      body.confirm = typed.trim();
+    } else if (!confirm("Set the suite halt flag? This blocks NEW live entries on every module — " +
+        "open positions still follow their normal hold-to-settlement rules. It does not flip " +
+        "enable_live_trading and does not touch any module's code or config.")) {
+      return;
+    }
+    const res = await post("/api/halt/set", body);
     if (!res.ok) alert(res.error || "failed");
     renderHalt();
   };
@@ -462,8 +470,17 @@ async function renderSecrets(quiet) {
     const modules = info.modules.length ? " (" + info.modules.join(", ") + ")" : "";
     h += `<h3 class="sec">${esc(svc)} — ${esc(info.label)}${modules}</h3>`;
     for (const [key, isSet] of Object.entries(info.status)) {
-      const acct = key === "account_number" && info.account
-        ? ` <span class="note" style="display:inline">${esc(info.account)}</span>` : "";
+      if (key === "account_number") {
+        // Status only: the live account is chosen against the broker's list, in a terminal.
+        const acct = info.account
+          ? ` <span class="note" style="display:inline">${esc(info.account)}</span>` : "";
+        const flag = info.modules.length ? `--module ${esc(info.modules[0])} ` : "";
+        h += `<div class="row"><span class="k">${esc(key)}
+            <span class="badge ${isSet ? "set" : "unset"}">${isSet ? "set" : "not set"}</span>${acct}</span>
+          <span class="note" style="display:inline">set in a terminal:
+            <code>run.py account ${flag}--set &lt;last4&gt;</code></span></div>`;
+        continue;
+      }
       h += `<div class="row"><span class="k">${esc(key)}
           <span class="badge ${isSet ? "set" : "unset"}">${isSet ? "set" : "not set"}</span>${acct}</span>
         <input type="password" placeholder="new value" autocomplete="off">

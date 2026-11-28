@@ -172,7 +172,15 @@ def test_halt_status_and_toggle_round_trip(server):
     status, _, body = _request(server + "/api/halt")
     assert json.loads(body)["present"] is True
 
-    status, _, body = _post(server, "/api/halt/set", {"present": False})
+    # The page's prompt is not the guard: the server refuses a clear without the phrase (#1502).
+    for bad in ({"present": False}, {"present": False, "confirm": "yes"}):
+        status, _, body = _post(server, "/api/halt/set", bad)
+        out = json.loads(body)
+        assert out["ok"] is False and out["code"] == "confirm_required"
+    _, _, body = _request(server + "/api/halt")
+    assert json.loads(body)["present"] is True
+
+    status, _, body = _post(server, "/api/halt/set", {"present": False, "confirm": "RESUME LIVE"})
     assert json.loads(body)["present"] is False
 
 

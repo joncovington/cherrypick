@@ -155,7 +155,7 @@ describe("LIVE and dry-run are told apart", () => {
 });
 
 describe("the state, the gates and the checks", () => {
-  it("lists all nine gates with the module's reason for the one that fails", () => {
+  it("lists every gate with the module's reason for the one that fails", () => {
     const out = html(<LadderLive live={payload()} status={status()} />);
     for (const g of GATE_NAMES) expect(out).toContain(g);
     expect(out).toContain("arm stamp is None, today is 2026-11-20 -- arming is per-day");
@@ -306,7 +306,7 @@ describe("a card with no data is left out", () => {
   it("draws no gates, checks, journal or orders card when the module reports none", () => {
     const bare = status({ gates: [], checks: null });
     const out = html(<LadderLiveToday live={payload({ journal: [], orders: [] })} status={bare} />);
-    expect(out).not.toContain("the nine gates");
+    expect(out).not.toContain("the live gates");
     expect(out).not.toContain("positions against the ledger");
     expect(out).not.toContain("standing dry-run intents");
     expect(out).not.toContain("<h2>journal</h2>");

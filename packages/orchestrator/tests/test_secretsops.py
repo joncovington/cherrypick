@@ -118,12 +118,18 @@ def test_unknown_service_and_key_rejected(env):
     assert secretsops.set_secret(cfg, "fliesagent-test", "refresh_token", "  ", _FakeStore)["ok"] is False
 
 
-def test_account_number_masked_in_set_response(env):
+@pytest.mark.parametrize("service", ["fliesagent-test", "cherrypick-broker"])
+def test_account_number_is_never_written_here(env, service):
+    """#1502: the live account is chosen against the broker's list (`accounts`), never typed here:
+    a set writes nothing, and a delete leaves the designation in place."""
     cfg, _ = env
-    out = secretsops.set_secret(cfg, "fliesagent-test", "account_number", ACCOUNT, _FakeStore)
-    assert out["ok"] is True and out["account"] == "****9876"
-    assert ACCOUNT not in json.dumps(out)
-    assert "cherrypick account" in out["hint"]
+    _FakeStore._mem = {service: {"account_number": ACCOUNT}}
+    out = secretsops.set_secret(cfg, service, "account_number", "5WX99999", _FakeStore)
+    assert out["ok"] is False and out["code"] == "guarded" and "run.py account" in out["error"]
+    assert "5WX99999" not in json.dumps(out)
+    out = secretsops.delete_secret(cfg, service, "account_number", _FakeStore)
+    assert out["ok"] is False and out["code"] == "guarded"
+    assert _FakeStore._mem[service] == {"account_number": ACCOUNT}
 
 
 def test_delete_secret(env):

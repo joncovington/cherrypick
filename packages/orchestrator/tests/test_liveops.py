@@ -117,7 +117,7 @@ def test_set_halt_creates_and_clears_the_flag(env):
     out = liveops.set_halt(True)
     assert out["ok"] is True and out["present"] is True
     assert liveops.halt_flag_path().exists() is True
-    out = liveops.set_halt(False)
+    out = liveops.set_halt(False, liveops.RESUME_CONFIRMATION)
     assert out["ok"] is True and out["present"] is False
     assert liveops.halt_flag_path().exists() is False
 
@@ -126,9 +126,33 @@ def test_set_halt_is_idempotent(env):
     liveops.set_halt(True)
     liveops.set_halt(True)  # touching an already-present flag doesn't error
     assert liveops.halt_flag_path().exists() is True
-    liveops.set_halt(False)
-    liveops.set_halt(False)  # deleting an already-absent flag doesn't error
+    liveops.set_halt(False, "RESUME LIVE")
+    liveops.set_halt(False, "RESUME LIVE")  # deleting an already-absent flag doesn't error
     assert liveops.halt_flag_path().exists() is False
+
+
+@pytest.mark.parametrize("confirm", [None, "", "resume live", "RESUME LIVE ", "YES"])
+def test_clearing_the_halt_needs_the_typed_phrase(env, confirm):
+    """#1502: the phrase is checked here, below every caller, so no surface clears it without one."""
+    liveops.set_halt(True)
+    out = liveops.set_halt(False, confirm)
+    assert out["ok"] is False and out["code"] == "confirm_required"
+    assert liveops.halt_flag_path().exists() is True
+
+
+def test_setting_the_halt_never_asks(env):
+    assert liveops.set_halt(True)["ok"] is True
+    assert liveops.set_halt(True, "anything")["present"] is True
+
+
+def test_resume_phrase_matches_the_console():
+    """The console checks the same phrase before the bridge; the two must not drift."""
+    import re
+    from pathlib import Path
+
+    ts = Path(__file__).resolve().parents[2] / "console" / "server" / "src" / "routes" / "configOps.ts"
+    match = re.search(r'RESUME_CONFIRMATION = "([^"]+)"', ts.read_text(encoding="utf-8"))
+    assert match and match.group(1) == liveops.RESUME_CONFIRMATION
 
 
 def test_halt_flag_path_is_the_core_convention(monkeypatch, tmp_path):

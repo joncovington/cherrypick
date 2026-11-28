@@ -13,8 +13,9 @@ status alone. `code` is the machine-readable half (`guarded`, `conflict`, `inval
 `bad_request`) so callers map refusals to their own vocabulary without matching on prose.
 
 No secret ever passes through here — `secretsops` is deliberately not wired in. The halt flag is
-reachable (`set_halt`), because its whole design is that a click may toggle it; the guarded live
-pointers are not, in either direction, exactly as over HTTP.
+reachable (`set_halt`): a click may set it, and clearing it needs the typed `RESUME LIVE` in
+`confirm`, which `liveops.set_halt` checks. The guarded live pointers are not reachable, in either
+direction, exactly as over HTTP.
 """
 
 from __future__ import annotations
@@ -120,7 +121,8 @@ def handle(req: dict[str, Any]) -> dict[str, Any]:
         present = req.get("present")
         if not isinstance(present, bool):
             return _err("set_halt needs a boolean 'present'")
-        return liveops.set_halt(present)
+        confirm = req.get("confirm")
+        return liveops.set_halt(present, confirm if isinstance(confirm, str) else None)
 
     cfg = cfgmod.load_config()
     if op == "features":

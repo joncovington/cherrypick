@@ -315,8 +315,13 @@ def test_halt_set_clear_and_status_are_idempotent(home):
     _, body, _ = call(home, {"op": "halt_status"})
     assert body["present"] is True
 
+    # Clearing without the phrase is refused, and the flag stays (#1502).
+    for bad in ({}, {"confirm": "resume live"}, {"confirm": 1}):
+        _, body, _ = call(home, {"op": "set_halt", "present": False, **bad})
+        assert body["ok"] is False and body["code"] == "confirm_required" and flag.exists()
+
     for _ in range(2):
-        _, body, _ = call(home, {"op": "set_halt", "present": False})
+        _, body, _ = call(home, {"op": "set_halt", "present": False, "confirm": "RESUME LIVE"})
         assert body["ok"] is True and body["present"] is False and not flag.exists()
 
 
