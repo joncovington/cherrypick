@@ -9774,7 +9774,8 @@ be the one he reads. No vendor price has been read.*
     thousand, above the user's per-trade cap; the measure is per unit and per dollar of maximum loss.
   - Two 3x funds, chosen by the user.
 - **Data:** item 103's listing probes; this plan's paths are every session's year-long monthly (the
-  structure and the skew) through its 45-day close, and every session's 45-day expiry while it is read.
+  structure and the skew) through its expiry (a close with a leg unquoted waits and tries again until
+  the expiry settles it), and every session's 45-day expiry while it is read.
   Fetched on the current tier, quotes only, the fetch skipping what item 103 and the store already hold.
   Split-adjusted closes and splits come from history.db, the bill from Treasury's 3-month curve. Results
   are derived from licensed data and stay under `~/.cherrypick/data/backtest/results/research/item104/`;

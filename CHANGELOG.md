@@ -68,6 +68,9 @@ beyond the latest release.
   what the rest wait behind. The local lane counts only rows that are not waiting on a queued fetch, so
   "idle" there means no local work exists. A queued row also names where its chain of `after` rows ends.
   Nothing to do.
+- **Item 104 requests each year-long call through its expiry.** A close with a leg unquoted waits a
+  session and tries again until the expiry settles it, and those sessions were read undeclared, as no
+  chain. The plan now covers them, and the script carries a correction entry. Nothing to do.
 - **The study kit's `Inputs.sessions` returns trading days only.** A stored non-trading day (the
   Saturday placeholder under every name, holiday sessions under SPXW) is no longer a session to a study
   on the kit, and `chain` reads such a day as none. Items 57, 74, 77 and 78 read such days and carry a

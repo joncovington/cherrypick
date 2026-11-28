@@ -323,10 +323,31 @@ def test_a_passing_design_with_a_losing_holdout_fails():
 # The plan.
 
 
-def test_the_plan_requests_each_sessions_year_long_monthly_to_its_close_and_its_45_day_expiry():
+def test_the_plan_requests_each_sessions_year_long_monthly_to_its_expiry_and_its_45_day_expiry():
     sessions = weekdays(date(2022, 1, 3), 280)
     reqs = m.path_requests("SOXL", sessions, lambda d: [EXP], ["2022-02-18", "2022-03-18", EXP])
     by = {r["expiration"]: r for r in reqs}
-    assert by[EXP]["start"] == sessions[0] and m.i103._cal(by[EXP]["through"], EXP) <= 45
+    assert by[EXP]["start"] == sessions[0] and by[EXP]["through"] == EXP
     assert by["2022-02-18"]["start"] == sessions[0]
     assert by["2022-02-18"]["through"] < "2022-02-18"  # read only while it is the 45-day expiry
+
+
+def test_every_chain_a_waiting_close_reads_is_inside_the_declared_paths():
+    # the long is unquoted from its 45-day close until a week before its expiry: the close waits a session
+    # at a time, and the plan has to have declared each session it reads
+    sessions = weekdays(date(2022, 1, 3), 280)
+    due = next(s for s in sessions if m.i103.long_due(s, EXP))
+    priced_again = (date.fromisoformat(EXP) - timedelta(days=7)).isoformat()
+    read = []
+
+    def chain_at(d, e):
+        read.append((d, e))
+        return None if e != EXP or due <= d < priced_again else year_chain()
+
+    mk = market(sessions=sessions)
+    mk = m.Market(mk.name, mk.sessions, mk.closes, chain_at, mk.listed_at, mk.gate_rows, split_days=[])
+    run = m.simulate(mk, "spread-any")
+    assert run.counts.get("close_unquoted", 0) > 0
+    spans = {r["expiration"]: r for r in m.path_requests("SOXL", sessions, lambda d: [EXP], [EXP])}
+    for d, e in read:
+        assert e in spans and spans[e]["start"] <= d <= spans[e]["through"], (d, e)
