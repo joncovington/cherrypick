@@ -22,7 +22,12 @@ beyond the latest release.
   the suite config and in its own live switch) still refuses when it is armed or holds something, but a
   status of its that cannot be read is only a warning in the result. The command names the module and
   the reason, and `account` now exits 1 on any refusal it prints (an unresolvable selector included).
-  The ladder's `--status` now reports `open_lots` and `working_orders`. Nothing to do.
+  The ladder's `--status` now reports `open_lots`, `working_orders` and `orphaned_orders`. Nothing to do.
+- **The watchdog's settlement checks follow an early close.** The paper and live settlement checks count
+  their grace from the day's own close (13:00 on a half day, not 16:00), and the live-positions check drops
+  the day's expired contracts from 13:00, so an unsettled book is flagged three hours sooner on 2026-12-24
+  and settled 0DTE legs no longer read as a mismatch until 16:00. `weeklyput`'s `--force` skips the window
+  but never the half-day refusal. Nothing to do.
 - **A chain fetch no longer asks the vendor for a day that is not a trading session, and the store's
   quality report lists any such day it holds.** The vendor answers a Saturday with a placeholder market
   (every option bid 0.05, ask 99.00), which a study read as a session. `fetch-chains` counts these
