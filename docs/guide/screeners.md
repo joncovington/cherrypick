@@ -35,7 +35,7 @@ thresholds.
   minimum count you pick. A tie has no side and is not listed.
 - **skate** (`/screeners/skate`) shows covered calls above a name's recent range and cash-secured puts
   below it, for a seller who does not want assignment. Tabs `calls` and `puts`; a band choice (`fixed` or
-  `by expiry`) decides which strikes drive the cards.
+  `by expiry`) decides which strikes drive the cards. A `both sides` chip marks a name whose best call and best put both pass every soft threshold, as the run marked it.
 
 ### The income lists
 
@@ -96,7 +96,7 @@ pass the same test are included. On the Setups watchlist the same verdict is the
 
 **Liquidity also shows on each trade.** A `thin` chip on a card means that trade's own option fails the leg
 bars (each leg two-sided, its spread within the bars, enough open interest), so the `Liquid trade` filter
-hides it by default. An `unquoted` chip means there was no quote to judge, so it stays shown, marked.
+hides it by default. A `Hide leveraged funds` switch on the income lists hides the leveraged, inverse and volatility funds; it starts off. An `unquoted` chip means there was no quote to judge, so it stays shown, marked.
 
 **Other chips.** `fits` or `does not fit` is against your account's buying power (or, for calls, whether you
 hold an uncovered 100-share lot). `earnings in the trade` warns of an announcement before expiry. A

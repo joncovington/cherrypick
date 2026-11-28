@@ -77,6 +77,7 @@ const RUN = {
       div_yield: 0.01,
       stage: 2,
       monthly: "2026-11-20",
+      both_sides: { fixed: true, by_expiry: false },
       best: {
         fixed: { expiry: "2026-11-20", strike: 110, per_day_bid: 3.75, skate: 0.9, monthly: "2026-11-20", vs_monthly: 1.0 },
         by_expiry: { expiry: "2026-10-30", strike: 106, per_day_bid: 5.5, skate: 0.86, monthly: "2026-11-20", vs_monthly: 1.47 },
@@ -153,6 +154,9 @@ describe("readSkate", () => {
     expect(aaa.bands.byExpiry.pick).toMatchObject({ expiry: "2026-10-30", strike: 106, gap: 0.02 });
     expect(p.rows[1]!.bands).toEqual({ fixed: { best: null, pick: null }, byExpiry: { best: null, pick: null } });
     expect(p.rows[1]).toMatchObject({ fund: true, earnings: null, stage: 1, monthly: null });
+    // The both-sides marker is the file's own flag per band; a row without it (an older run) is null, never false.
+    expect(aaa.bothSides).toEqual({ fixed: true, byExpiry: false });
+    expect(p.rows[1]!.bothSides).toEqual({ fixed: null, byExpiry: null });
     // A run older than the fee and history-span fields: null, never a zero fee.
     expect(aaa.bands.fixed.pick).toMatchObject({ feeOpen: null, netPremiumBid: null, netYieldBid: null, historyWindows: null });
   });
