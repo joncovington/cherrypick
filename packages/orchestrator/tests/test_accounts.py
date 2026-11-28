@@ -87,6 +87,18 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path / "home"))
     monkeypatch.setattr(accounts, "CredentialStore", _FakeStore)
     monkeypatch.setattr(accounts, "_tt", lambda root, *argv, tool=None: {"ok": True, "accounts": _ACCTS})
+    # The live-book guard asks the module's own status (#1513; test_account_guard.py covers the
+    # refusals): here the book is flat, so this file's designation tests reach the write.
+    monkeypatch.setattr(
+        accounts,
+        "module_status",
+        lambda cfg, module, login=None: {
+            "ok": True,
+            "armed_for": None,
+            "open_positions": 0,
+            "pending_orders": [],
+        },
+    )
     cfg = {
         "modules": {
             "meic": {
