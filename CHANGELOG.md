@@ -18,9 +18,11 @@ beyond the latest release.
   a working order (MEIC's main account manages its book even when it is not armed). The refusal is in
   the orchestrator's account code, so the console's account step and `connect` get it too; there is no
   override, and a status that cannot be read refuses. The suite-wide account is checked against every
-  module that inherits it, a second login's against that login alone. The command exits 1 and names the
-  module and the reason. The ladder's `--status` now reports `open_lots` and `working_orders`.
-  Nothing to do.
+  module that inherits it, a second login's against that login alone. A retired module (switched off in
+  the suite config and in its own live switch) still refuses when it is armed or holds something, but a
+  status of its that cannot be read is only a warning in the result. The command names the module and
+  the reason, and `account` now exits 1 on any refusal it prints (an unresolvable selector included).
+  The ladder's `--status` now reports `open_lots` and `working_orders`. Nothing to do.
 - **A chain fetch no longer asks the vendor for a day that is not a trading session, and the store's
   quality report lists any such day it holds.** The vendor answers a Saturday with a placeholder market
   (every option bid 0.05, ask 99.00), which a study read as a session. `fetch-chains` counts these

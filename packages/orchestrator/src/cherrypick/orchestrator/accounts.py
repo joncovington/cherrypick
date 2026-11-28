@@ -56,33 +56,41 @@ def module_status(cfg: dict[str, Any], module: str, login: str | None = None) ->
 
 def _count(status: dict[str, Any], *keys: str) -> int | None:
     """The first of `keys` the status carries, as a count (a list counts its length); None when none
-    is there or it is null: unknown is not zero."""
+    is there, it is null or it is not a count: unknown is not zero."""
     for key in keys:
         if key in status:
             value = status[key]
-            if value is None:
+            if isinstance(value, (list, tuple, dict)):
+                return len(value)
+            if isinstance(value, bool) or not isinstance(value, (int, float, str)):
                 return None
-            return len(value) if isinstance(value, (list, tuple, dict)) else int(value)
+            try:
+                return int(value)
+            except (ValueError, OverflowError):
+                return None
     return None
 
 
-def book_reasons(status: dict[str, Any], record_date: str | None, today: str) -> list[str]:
-    """Why a live account's designation may not change now, in words; empty when it is not armed
-    today and holds no position and no working order. Every field is the module's own answer, and a
-    missing one counts against: unknown is not empty."""
+def book_reasons(status: dict[str, Any], record_date: str | None, today: str) -> tuple[list[str], list[str]]:
+    """Why a live account's designation may not change now, in words: (definite, unknown). Both are
+    empty when it is not armed today and holds no position and no working order. Every field is the
+    module's own answer, and a missing one is unknown, which is not empty. The module's arm record
+    is read at the suite's own path; flies' older record location is not, so for flies the status's
+    own `armed_for` (which does read it) is what decides."""
     out: list[str] = []
+    unknown: list[str] = []
     if today in (record_date, status.get("armed_for")) or status.get("armed_today") is True:
         out.append("its live loop is armed for today")
     if status.get("ledger_unreadable"):
-        out.append("its live ledger cannot be read")
+        unknown.append("its live ledger cannot be read")
     positions = _count(status, "open_positions", "open_lots")
     if positions is None:
-        out.append("whether it holds a position is not known")
+        unknown.append("whether it holds a position is not known")
     elif positions:
         out.append(f"it holds {positions} open position(s)")
     working = _count(status, "pending_orders", "working_orders")
     if working is None:
-        out.append("whether it has a working order is not known")
+        unknown.append("whether it has a working order is not known")
     elif working:
         out.append(f"it has {working} working order(s)")
     if status.get("entry_intents"):
@@ -92,16 +100,29 @@ def book_reasons(status: dict[str, Any], record_date: str | None, today: str) ->
     held = status.get("broker_held", status.get("held")) or {}
     if isinstance(held, dict) and (held.get("unresolved") or held.get("unrecorded")):
         out.append("a broker submission is unresolved or unrecorded")
-    return out
+    return out, unknown
+
+
+def _switched_off(mcfg: dict[str, Any], module: str) -> bool:
+    """A module the suite config has switched off AND whose own live master switch is known off: a
+    retired module. What it holds still refuses; only what it cannot say is a warning."""
+    if mcfg.get("enabled"):
+        return False
+    return _live_enabled(cfgmod.module_root(mcfg, module), module) is False
 
 
 def live_book_refusal(
-    cfg: dict[str, Any], targets: list[tuple[str, str | None]], designated: str | None
+    cfg: dict[str, Any],
+    targets: list[tuple[str, str | None]],
+    designated: str | None,
+    warnings: list[str] | None = None,
 ) -> dict[str, Any] | None:
     """A refusal when any of `targets` (module, login-or-None) has its live loop armed today or holds
     a position or working order, or None when every one is clear (#1513). A module with no live loop
     or no checkout has no book and is skipped. A status that cannot be read refuses: unknown is not
-    flat. `designated` is the account being changed, masked in the message."""
+    flat, except for a retired module (`_switched_off`), whose unreadable or unsaid parts are added to
+    `warnings` instead, since no override exists and it would otherwise refuse for good. `designated`
+    is the account being changed, masked in the message."""
     today = timeutil.now_et().date().isoformat()
     blockers: list[str] = []
     for module, login in targets:
@@ -109,14 +130,24 @@ def live_book_refusal(
         if not mcfg or not cfgmod.has_live_path(module) or not cfgmod.module_root(mcfg, module).exists():
             continue
         where = module if login is None else f"{module} on login {login}"
+        retired = _switched_off(mcfg, module)
         status = module_status(cfg, module, login)
         if status is None:
-            blockers.append(
-                f"{where}: its live status cannot be read, so whether it holds a book is not known"
-            )
+            msg = f"{where}: its live status cannot be read, so whether it holds a book is not known"
+            if retired:
+                if warnings is not None:
+                    warnings.append(f"{msg} (it is switched off)")
+            else:
+                blockers.append(msg)
             continue
         key = module if login is None else f"{module}.{login}"
-        blockers += [f"{where}: {why}" for why in book_reasons(status, _live.arm_record_date(key), today)]
+        definite, unknown = book_reasons(status, _live.arm_record_date(key), today)
+        blockers += [f"{where}: {why}" for why in definite]
+        if retired:
+            if warnings is not None:
+                warnings += [f"{where}: {why} (it is switched off)" for why in unknown]
+        else:
+            blockers += [f"{where}: {why}" for why in unknown]
     if not blockers:
         return None
     account = f" ({mask_account(designated)})" if designated else ""
@@ -129,18 +160,25 @@ def live_book_refusal(
     }
 
 
+def _with_warnings(result: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
+    return {**result, "warnings": warnings} if warnings else result
+
+
 def _inheriting_modules(cfg: dict[str, Any]) -> list[str]:
     """The live-path modules that read the shared designation through: those with no designation of
-    their own. A module whose own entry cannot be read counts as inheriting."""
+    their own. A module with no keyring service of its own, or whose own entry cannot be read, counts
+    as inheriting."""
     out = []
     for name, mcfg in (cfg.get("modules") or {}).items():
-        service = cfgmod.module_keyring_service(mcfg, name) if cfgmod.has_live_path(name) else None
-        if not service:
+        if not cfgmod.has_live_path(name):
             continue
-        try:
-            own = CredentialStore(service).get_secret(ACCOUNT_NUMBER)
-        except CredentialError:
-            own = None
+        service = cfgmod.module_keyring_service(mcfg, name)
+        own = None
+        if service:
+            try:
+                own = CredentialStore(service).get_secret(ACCOUNT_NUMBER)
+            except CredentialError:
+                own = None
         if not own:
             out.append(name)
     return out
@@ -311,8 +349,9 @@ def set_shared_account(cfg: dict[str, Any], selector: str) -> dict[str, Any]:
     `account --module X --set` still overrides. Caller is responsible for human confirmation.
     Refused, writing nothing, while any module that inherits it has its live loop armed today or
     holds a position or working order."""
+    warnings: list[str] = []
     refusal = live_book_refusal(
-        cfg, [(m, None) for m in _inheriting_modules(cfg)], _designated_number(_shared_store())
+        cfg, [(m, None) for m in _inheriting_modules(cfg)], _designated_number(_shared_store()), warnings
     )
     if refusal:
         return refusal
@@ -326,7 +365,7 @@ def set_shared_account(cfg: dict[str, Any], selector: str) -> dict[str, Any]:
     if not full:
         return {"ok": False, "error": f"selector {selector!r} did not resolve to exactly one account"}
     _shared_store().set_secret(ACCOUNT_NUMBER, full)
-    return {"ok": True, "scope": "shared", "designated": mask_account(full)}
+    return _with_warnings({"ok": True, "scope": "shared", "designated": mask_account(full)}, warnings)
 
 
 def login_designation_store(login: str, module: str) -> CredentialStore:
@@ -458,13 +497,14 @@ def logins_status(cfg: dict[str, Any], store_factory=None) -> list[dict[str, Any
 def clear_shared_account(cfg: dict[str, Any]) -> dict[str, Any]:
     """Unset the suite-wide designation; refused like the set while any module that inherits it is
     armed today or holds a position or working order."""
+    warnings: list[str] = []
     refusal = live_book_refusal(
-        cfg, [(m, None) for m in _inheriting_modules(cfg)], _designated_number(_shared_store())
+        cfg, [(m, None) for m in _inheriting_modules(cfg)], _designated_number(_shared_store()), warnings
     )
     if refusal:
         return refusal
     _shared_store().delete_secret(ACCOUNT_NUMBER)
-    return {"ok": True, "scope": "shared", "designated": None}
+    return _with_warnings({"ok": True, "scope": "shared", "designated": None}, warnings)
 
 
 def onboarding_status(cfg: dict[str, Any], store_factory=CredentialStore) -> dict[str, Any]:
@@ -551,7 +591,8 @@ def set_account(cfg: dict[str, Any], module: str, selector: str) -> dict[str, An
     _mcfg, root, store, err = _context(cfg, module)
     if err:
         return err
-    refusal = live_book_refusal(cfg, [(module, None)], _designated_number(store))
+    warnings: list[str] = []
+    refusal = live_book_refusal(cfg, [(module, None)], _designated_number(store), warnings)
     if refusal:
         return refusal
     accounts, aerr = _broker_accounts(root, cfgmod.broker_tool(_mcfg or {}, module))
@@ -567,7 +608,7 @@ def set_account(cfg: dict[str, Any], module: str, selector: str) -> dict[str, An
         store.set_secret(ACCOUNT_NUMBER, full)
     except CredentialError as exc:
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "module": module, "designated": mask_account(full)}
+    return _with_warnings({"ok": True, "module": module, "designated": mask_account(full)}, warnings)
 
 
 def clear_account(cfg: dict[str, Any], module: str) -> dict[str, Any]:
@@ -576,11 +617,12 @@ def clear_account(cfg: dict[str, Any], module: str) -> dict[str, Any]:
     _mcfg, _root, store, err = _context(cfg, module)
     if err:
         return err
-    refusal = live_book_refusal(cfg, [(module, None)], _designated_number(store))
+    warnings: list[str] = []
+    refusal = live_book_refusal(cfg, [(module, None)], _designated_number(store), warnings)
     if refusal:
         return refusal
     try:
         store.delete_secret(ACCOUNT_NUMBER)
     except CredentialError as exc:
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "module": module, "designated": None}
+    return _with_warnings({"ok": True, "module": module, "designated": None}, warnings)

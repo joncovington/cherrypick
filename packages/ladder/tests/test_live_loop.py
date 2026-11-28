@@ -228,6 +228,17 @@ def test_status_counts_the_lots_and_working_orders_the_live_ledger_holds(capsys,
     assert _status_book(capsys, write_config) == (1, 1)
 
 
+def test_a_ledger_with_no_tables_yet_holds_nothing(capsys, suite, write_config):
+    """An empty file or a schema-less one is a ledger that never held anything, not one that is unreadable:
+    otherwise the account could never be changed."""
+    import sqlite3
+
+    path = pathlib.Path(live_loop.live_db.live_db_path())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sqlite3.connect(path).close()  # a valid, empty database file
+    assert _status_book(capsys, write_config) == (0, 0)
+
+
 def test_status_says_unknown_when_the_live_ledger_cannot_be_read(capsys, suite, write_config):
     path = pathlib.Path(live_loop.live_db.live_db_path())
     path.parent.mkdir(parents=True, exist_ok=True)

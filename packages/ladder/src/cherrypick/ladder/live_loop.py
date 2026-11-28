@@ -91,15 +91,19 @@ def gates_now(config: dict, *, designated: str | None = None, when=None) -> list
 
 def book_counts() -> tuple[int | None, int | None]:
     """(open lots, working orders) the live ledger holds, from the file alone. A ledger that was never
-    written holds none; one that cannot be read is (None, None), because it cannot show that nothing
-    is held. The orchestrator reads these before it changes the designated account."""
+    written, or one with no lot or order table yet, holds none; one that cannot be read is
+    (None, None), because it cannot show that nothing is held. The orchestrator reads these before
+    it changes the designated account."""
     path = live_db.live_db_path()
     if not os.path.exists(path):
         return 0, 0
     try:
         conn = live_db.connect_ro(path)
         try:
-            return len(live_db.open_lots(conn)), len(live_db.open_orders(conn))
+            tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+            lots = len(live_db.open_lots(conn)) if "ladder_positions" in tables else 0
+            orders = len(live_db.open_orders(conn)) if "ladder_orders" in tables else 0
+            return lots, orders
         finally:
             conn.close()
     except Exception:  # noqa: BLE001 -- a status note must say "unknown", never break the status

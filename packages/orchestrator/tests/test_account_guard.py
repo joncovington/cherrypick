@@ -255,6 +255,118 @@ def test_the_account_command_exits_non_zero_on_the_refusal(world, capsys):
     assert _designated() == FULL
 
 
+def test_the_account_command_exits_non_zero_on_the_shared_and_login_refusals(world, capsys):
+    from cherrypick import cli
+
+    cfg, statuses = world
+    _Store.mem[("meic-test", None)] = {}  # meic inherits the shared account
+    statuses[("meic", None)] = flat(open_positions=1)
+    statuses[("meic", "margin")] = flat(open_positions=2)
+    cases = [
+        SimpleNamespace(module=None, set="6666", clear=False, yes=True, login=None),
+        SimpleNamespace(module=None, set=None, clear=True, yes=True, login=None),
+        SimpleNamespace(module="meic", set="7777", clear=False, yes=True, login="margin"),
+        SimpleNamespace(module="meic", set=None, clear=True, yes=True, login="margin"),
+    ]
+    for args in cases:
+        with pytest.raises(SystemExit) as exc:
+            cli.cmd_account(cfg, args)
+        assert exc.value.code == 1
+        assert "open position(s)" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- odd statuses
+@pytest.mark.parametrize("value", ["many", True, object(), float("nan"), float("inf"), {"a": 1}])
+def test_a_count_that_is_not_a_number_is_unknown_not_an_error(value):
+    got = accounts._count({"open_positions": value}, "open_positions")
+    assert got == (1 if isinstance(value, dict) else None)
+
+
+def test_a_string_count_that_parses_is_a_count():
+    assert accounts._count({"open_lots": "3"}, "open_lots") == 3
+
+
+def test_a_status_with_a_junk_count_refuses_rather_than_raises(world):
+    cfg, statuses = world
+    statuses[("meic", None)] = flat(open_positions="many")
+    _refused(accounts.set_account(cfg, "meic", "6666"), "position is not known")
+
+
+def test_a_module_with_no_keyring_service_still_inherits_the_shared_account(world):
+    cfg, statuses = world
+    cfg["modules"]["ladder"]["keyring_service"] = None  # no service of its own: it reads the shared one
+    _Store.mem[("meic-test", None)] = {"account_number": FULL}  # meic has its own, so it is not affected
+    _Store.mem[(accounts.SHARED_SERVICE, None)] = {"account_number": FULL}
+    statuses[("ladder", None)] = ladder_flat(open_lots=2)
+    _refused(accounts.set_shared_account(cfg, "6666"), "ladder", "2 open position(s)")
+    _refused(accounts.clear_shared_account(cfg), "ladder", "2 open position(s)")
+
+
+# --------------------------------------------------------------------------- a retired module
+@pytest.fixture
+def retired(world, tmp_path):
+    """The world plus flies: switched off in the suite config and its own live switch off, inheriting
+    the shared account."""
+    cfg, statuses = world
+    (tmp_path / "flies").mkdir()
+    (tmp_path / "home" / "config" / "flies.json").write_text(
+        json.dumps({"live": {"enabled": False}}), encoding="utf-8"
+    )
+    cfg["modules"]["flies"] = {
+        "enabled": False,
+        "path": str(tmp_path / "flies"),
+        "keyring_service": "flies-test",
+    }
+    _Store.mem[("meic-test", None)] = {"account_number": FULL}  # only flies inherits
+    _Store.mem[(accounts.SHARED_SERVICE, None)] = {"account_number": FULL}
+    statuses[("flies", None)] = {"ok": True, "armed_for": None, "open_positions": 0, "pending_orders": 0}
+    return cfg, statuses
+
+
+def test_a_retired_module_whose_status_cannot_be_read_is_a_warning_not_a_refusal(retired):
+    cfg, statuses = retired
+    statuses[("flies", None)] = None
+    out = accounts.set_shared_account(cfg, "6666")
+    assert out["ok"] is True and "flies" in out["warnings"][0] and "switched off" in out["warnings"][0]
+    out = accounts.clear_shared_account(cfg)
+    assert out["ok"] is True and out["warnings"]
+
+
+def test_a_retired_module_that_does_not_say_what_it_holds_is_a_warning(retired):
+    cfg, statuses = retired
+    statuses[("flies", None)] = {"ok": True, "armed_for": None}
+    out = accounts.set_shared_account(cfg, "6666")
+    assert out["ok"] is True and len(out["warnings"]) == 2
+
+
+def test_a_retired_module_that_holds_or_is_armed_still_refuses(retired):
+    cfg, statuses = retired
+    statuses[("flies", None)] = {"ok": True, "armed_for": None, "open_positions": 1, "pending_orders": 0}
+    _refused(accounts.set_shared_account(cfg, "6666"), "flies", "1 open position(s)")
+    statuses[("flies", None)] = {"ok": True, "armed_for": _today(), "open_positions": 0, "pending_orders": 0}
+    _refused(accounts.clear_shared_account(cfg), "flies", "armed for today")
+
+
+def test_a_module_that_is_enabled_or_live_switched_on_stays_fail_closed(retired, tmp_path):
+    cfg, statuses = retired
+    statuses[("flies", None)] = None
+    cfg["modules"]["flies"]["enabled"] = True
+    _refused(accounts.set_shared_account(cfg, "6666"), "flies", "cannot be read")
+    cfg["modules"]["flies"]["enabled"] = False
+    (tmp_path / "home" / "config" / "flies.json").write_text(
+        json.dumps({"live": {"enabled": True}}), encoding="utf-8"
+    )
+    _refused(accounts.set_shared_account(cfg, "6666"), "flies", "cannot be read")
+    (tmp_path / "home" / "config" / "flies.json").unlink()  # its switch is unknown: not retired
+    _refused(accounts.set_shared_account(cfg, "6666"), "flies", "cannot be read")
+
+
+def test_the_arm_record_decides_for_a_retired_module_too(retired):
+    cfg, _ = retired
+    _live.write_arm_record("flies", date=_today(), armed_by="test", at="2026-11-28T09:00:00-05:00")
+    _refused(accounts.set_shared_account(cfg, "6666"), "flies", "armed for today")
+
+
 def test_the_onboarding_step_reports_the_refusal(world):
     """`connect` calls `accounts.set_account` and shows what it answers; the guard needs no second copy."""
     from cherrypick.orchestrator import connect
