@@ -26,6 +26,12 @@ beyond the latest release.
   Saturday placeholder under every name, holiday sessions under SPXW) is no longer a session to a study
   on the kit, and `chain` reads such a day as none. Items 57, 74, 77 and 78 read such days and carry a
   correction entry; items 59, 63, 64, 70, 86 and 101 reproduce identically. Nothing to do.
+- **MEIC's live guards are checked by the guard mutants.** Eleven `meic-*` mutants break the master
+  switch, readiness, the arm record, the halt, the daily-loss breaker, the kill criteria, the orphan
+  sweep, the per-day cap, the dry-run default, and the manual door's refusal of an open and pass for a
+  close; each guard's tests must fail under its mutant. New tests pin that the tick reads the halt flag
+  and the breaker, and that every order door in `tt` reads the master switch. A change to meic now runs
+  the `guards` CI job. Nothing to do.
 
 ## v0.14.1 — 2026-11-26 — held queue rows and corrupt windows
 Fixes to v0.14.0: one that stopped the research queue behind a fetch that could never finish, one

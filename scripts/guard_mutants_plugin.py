@@ -70,6 +70,16 @@ def _unguarded(_log, fn, *args, **kwargs):
     return fn(*args, **kwargs)
 
 
+def _no_blockers(*_args, **_kwargs):
+    return []
+
+
+def _kill_never_blocks(*_args, **_kwargs):
+    from cherrypick.core import killcriteria
+
+    return {"state": killcriteria.NORMAL, "reasons": []}
+
+
 def _features_read_ahead():
     """The real `feature_series`, except each session's close extremity is the NEXT session's: the
     one-bar look-ahead the range-features truncation guard exists to catch."""
@@ -395,6 +405,9 @@ REPLACEMENTS = {
     "gate_always_passes": lambda: lambda _gate, _ctx: (True, None),
     "control_reads_ahead": _control_reads_ahead,
     "em_reads_entry_close": _em_reads_entry_close,
+    "no_blockers": lambda: _no_blockers,
+    "no_orphans": lambda: lambda *_a, **_k: 0,
+    "kill_never_blocks": lambda: _kill_never_blocks,
 }
 
 
@@ -850,6 +863,134 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.backtest.signalstudy",
         attr="_vol_at",
         replacement="em_reads_entry_close",
+    ),
+    # MEIC's live loop and its manual door: the guards between an armed account and a new order, and
+    # the one that keeps a close getting through.
+    Mutant(
+        id="meic-live-master-switch",
+        breaks="tt reads live trading as enabled whatever enable_live_trading says",
+        package="meic",
+        tests=(
+            "tests/test_tt.py::test_live_trading_enabled_reads_config",
+            "tests/test_tt.py::test_live_trading_is_never_armed_from_the_environment",
+            "tests/test_live_tick_guards.py::test_the_master_switch_off_in_config_keeps_every_order_door_shut",
+        ),
+        module="cherrypick.meic.tt",
+        attr="_live_trading_enabled",
+        replacement="always_true",
+    ),
+    Mutant(
+        id="meic-live-readiness",
+        breaks="the live loop acts with an account gate unmet",
+        package="meic",
+        tests=(
+            "tests/test_live_scaffold.py::test_readiness_names_each_unmet_gate",
+            "tests/test_live_scaffold.py::test_readiness_blocks_live_before_run_once_would_even_be_reached",
+        ),
+        module="cherrypick.meic.live_loop",
+        attr="readiness",
+        replacement="no_blockers",
+    ),
+    Mutant(
+        id="meic-live-arm-record",
+        breaks="a live tick reaches the broker with no arm record for today",
+        package="meic",
+        tests=("tests/test_live_arming.py::test_a_live_tick_without_an_arm_never_reaches_the_broker",),
+        module="cherrypick.meic.live_loop",
+        attr="should_disarm",
+        replacement="nothing",
+    ),
+    Mutant(
+        id="meic-live-entry-blockers",
+        breaks="the tick applies no entry blocker, so neither the halt flag nor the breaker stops a new IC",
+        package="meic",
+        tests=(
+            "tests/test_live_scaffold.py::test_the_halt_and_the_breaker_are_entry_blockers",
+            "tests/test_live_tick_guards.py::test_a_tick_with_the_halt_flag_present_opens_nothing",
+        ),
+        module="cherrypick.meic.live_loop",
+        attr="entry_blockers",
+        replacement="no_blockers",
+    ),
+    Mutant(
+        id="meic-live-daily-loss-breaker",
+        breaks="the daily-loss breaker never trips, even on an unreadable ledger",
+        package="meic",
+        tests=(
+            "tests/test_live_scaffold.py::test_daily_loss_breaker",
+            "tests/test_live_scaffold.py::test_the_daily_loss_breaker_fails_closed_on_an_unreadable_ledger",
+            "tests/test_live_tick_guards.py::test_a_tick_past_the_daily_loss_breaker_opens_nothing",
+        ),
+        module="cherrypick.meic.live_loop",
+        attr="daily_loss_tripped",
+        replacement="always_false",
+    ),
+    Mutant(
+        id="meic-live-kill-criteria",
+        breaks="live enters with no written kill criteria, or past a latched kill",
+        package="meic",
+        tests=(
+            "tests/test_live_scaffold.py::test_an_arm_without_written_kill_criteria_opens_nothing",
+            "tests/test_live_scaffold.py::test_a_latched_kill_blocks_entries_until_cleared",
+        ),
+        module="cherrypick.meic.live_loop",
+        attr="kill_verdict",
+        replacement="kill_never_blocks",
+    ),
+    Mutant(
+        id="meic-live-orphan-sweep",
+        breaks="live enters beside a working order its ledger never recorded, or a sweep that could not look",
+        package="meic",
+        tests=(
+            "tests/test_live_arming.py::test_an_unknown_working_order_blocks_entries_but_not_management",
+            "tests/test_live_arming.py::test_a_sweep_that_cannot_look_blocks_entries",
+        ),
+        module="cherrypick.meic.live_loop",
+        attr="_sweep_orphans",
+        replacement="no_orphans",
+    ),
+    Mutant(
+        id="meic-live-entries-per-day",
+        breaks="live opens a second IC on a day capped at one",
+        package="meic",
+        tests=("tests/test_live_arming.py::test_the_cap_stops_a_second_entry_the_same_day",),
+        module="cherrypick.meic.live_loop",
+        attr="max_structures_per_day",
+        replacement="nothing",
+    ),
+    Mutant(
+        id="meic-live-dry-run-default",
+        breaks="a live entry is sent when live.dry_run is missing or anything but a literal false",
+        package="meic",
+        tests=(
+            "tests/test_live_dry_run.py::test_anything_but_a_literal_false_is_a_dry_run",
+            "tests/test_live_dry_run.py::test_a_config_without_the_key_is_a_dry_run",
+        ),
+        module="cherrypick.meic.live_loop",
+        attr="live_dry_run",
+        replacement="always_false",
+    ),
+    Mutant(
+        id="meic-manual-open-door",
+        breaks="a hand-placed live open gets through while halted, unarmed or killed",
+        package="meic",
+        tests=(
+            "tests/test_tt_manual_open_gate.py::test_a_halt_refuses_an_open_and_lets_a_close_through",
+            "tests/test_tt_manual_open_gate.py::test_an_unarmed_day_refuses_an_open",
+            "tests/test_tt_manual_open_gate.py::test_a_blocked_kill_verdict_refuses_an_open",
+        ),
+        module="cherrypick.meic.tt",
+        attr="_manual_open_refusal",
+        replacement="nothing",
+    ),
+    Mutant(
+        id="meic-manual-close-gets-through",
+        breaks="the manual door refuses a close like an open while halted",
+        package="meic",
+        tests=("tests/test_tt_manual_open_gate.py::test_a_halt_refuses_an_open_and_lets_a_close_through",),
+        module="cherrypick.meic.tt",
+        attr="_opens_position",
+        replacement="always_true",
     ),
 )
 

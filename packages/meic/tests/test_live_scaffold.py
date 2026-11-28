@@ -886,7 +886,8 @@ def test_an_arm_without_written_kill_criteria_opens_nothing(tmp_path):
     out = live_loop.run_once(
         _config(kill=None), _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None
     )
-    assert out["entry"]["blocked"] == [f"kill_criteria: {_kill.UNWRITTEN}"] and not broker.placed
+    assert not broker.placed
+    assert out["entry"]["blocked"] == [f"kill_criteria: {_kill.UNWRITTEN}"]
 
 
 def test_a_latched_kill_blocks_entries_until_cleared(tmp_path):
@@ -897,7 +898,8 @@ def test_a_latched_kill_blocks_entries_until_cleared(tmp_path):
         out = live_loop.run_once(
             _config(), _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None
         )
-        assert _kill.LATCHED in out["entry"]["blocked"][0] and not broker.placed
+        assert not broker.placed
+        assert _kill.LATCHED in out["entry"]["blocked"][0]
     finally:
         _kill.clear("meic")
     out = live_loop.run_once(
@@ -906,8 +908,9 @@ def test_a_latched_kill_blocks_entries_until_cleared(tmp_path):
     assert out["entry"]["entry"] == "placed"
 
 
-def _unrecorded_close(db_path, day, ic_order_id="BLIND1"):
-    """A closed live IC with no `pnl` or `fees`, as the 2026-06-29 stop was recorded."""
+def _unrecorded_close(db_path, day, ic_order_id="BLIND1", **recorded):
+    """A closed live IC with no `pnl` or `fees`, as the 2026-06-29 stop was recorded; `recorded`
+    sets them (or any other column)."""
     paper._save_trade(
         {
             **_open_trade_row("XSP"),
@@ -917,6 +920,7 @@ def _unrecorded_close(db_path, day, ic_order_id="BLIND1"):
             "expiration": day,
             "exit_time": f"{day} 11:00:00",
             "status": "closed",
+            **recorded,
         },
         db_path,
     )
