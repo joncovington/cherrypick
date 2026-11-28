@@ -277,6 +277,69 @@ def test_path_requests_list_each_expiry_once_from_its_earliest_sale_to_its_lates
     assert none == []  # a lot that never reached the hospital needs no path
 
 
+def _declared(reqs: list[dict], session: str, expiry: str) -> bool:
+    return any(r["expiration"] == expiry and r["start"] <= session <= r["through"] for r in reqs)
+
+
+@pytest.mark.parametrize("rule", s76.ARMS)
+@pytest.mark.parametrize(
+    "drop", ["planned_sales", "every_other_session", "first_week", "no_strike_first_week"]
+)
+@pytest.mark.parametrize("split", [False, True], ids=["no_split", "split"])
+def test_every_chain_the_arm_reads_is_a_requested_path_even_when_a_sale_waits(rule, drop, split):
+    """#1439: the study reads only the paths the plan requested. A sale that finds no chain waits a session
+    and sells on that session's expiry, which the plan must have requested too; with a split inside the
+    window, the call bought back the session before it and the one sold on the ex-date are too. Shown to
+    fail with the requests built from `plan_lot` alone (the path that assumes every sale goes through)."""
+    bars = _bars([100.0] + [90.0] * 90 + [105.0] * 40)
+    lot = _lot(bars, 100.0, 14)
+    last = len(bars) - 1
+    expiries = _fridays(60)
+    splits = [bars[50].date] if split else []
+    reqs = s76.path_requests("SOXL", bars, [lot], expiries, splits, last)
+    planned = {j for j, *_ in s76.plan_lot(bars, lot, expiries, splits, last)}
+    dropped = {
+        "planned_sales": lambda j: j in planned,
+        "every_other_session": lambda j: j % 2 == 0,
+        "first_week": lambda j: 14 <= j < 19,
+        "no_strike_first_week": lambda j: 14 <= j < 19,
+    }[drop]
+    by_date = {b.date: i for i, b in enumerate(bars)}
+    real, reads = _chain_at(bars), []
+
+    def chain_at(session, expiry):
+        reads.append((session, expiry))
+        if not dropped(by_date[session]):
+            return real(session, expiry)
+        if drop == "no_strike_first_week":  # a chain with no call quoted: no strike qualifies, the sale waits
+            return {key: q for key, q in real(session, expiry).items() if key[1] == "P"}
+        return {}
+
+    s76.run_call_arm(rule, "SOXL", lot, bars, expiries, splits, last, chain_at, lambda s: 0.0)
+    assert reads, "the arm read no chain at all: the case does not exercise the plan"
+    undeclared = [r for r in reads if not _declared(reqs, *r)]
+    assert undeclared == [], f"read outside the requested paths: {undeclared[:5]}"
+
+
+def test_a_waiting_sale_reads_an_expiry_the_no_wait_path_never_reaches():
+    """The case above can fail: with the first sales' chains missing, the arm sells later, on an expiry the
+    no-wait path (`plan_lot`) does not request."""
+    bars = _bars([100.0] + [90.0] * 90 + [105.0] * 40)
+    lot = _lot(bars, 100.0, 14)
+    last, expiries = len(bars) - 1, _fridays(60)
+    plan = s76.plan_lot(bars, lot, expiries, [], last)
+    no_wait = {exp for _, exp, _, _ in plan}
+    real, reads = _chain_at(bars), []
+    gap_end = bars[plan[0][0] + 4].date  # the first sale and the four sessions after it find no chain
+
+    def chain_at(session, expiry):
+        reads.append((session, expiry))
+        return {} if session <= gap_end else real(session, expiry)
+
+    s76.run_call_arm("cost5", "SOXL", lot, bars, expiries, [], last, chain_at, lambda s: 0.0)
+    assert any(exp not in no_wait for _, exp in reads)
+
+
 # ---- assignment, expiry, the 104% sale and the marks ----
 
 
