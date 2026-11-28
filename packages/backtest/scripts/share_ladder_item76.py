@@ -89,6 +89,17 @@ CHAIN = (
     {"step": "study", "kind": "script", "args": ["study"], "output": "{results}/results.json"},
 )
 
+#: Fixes to how the replay reads its data, each logged as working-rules.md asks.
+REPLAY_CORRECTIONS = (
+    {"on": "2026-11-28", "what": "the plan requests every path a call can be read from: each session from the "
+     "hospital day to the window's end that a sale can happen on, its expiry through its segment's end "
+     "(`reachable_sales`), not only the path that assumes every sale goes through",
+     "why": "a sale that finds no chain or no strike waits a session, and that session's expiry was never "
+     "requested; reading only declared paths (#1439) then refused it (SOXL, 2021-08-23, the 2021-10-08 "
+     "expiry). Before that, such reads went to whatever the shared store held",
+     "decided": "user chose this fix from three (issue #1439)", "before_read": False},
+)  # fmt: skip
+
 NAMES = s29.NAMES
 DROP, GAIN, COST = sl.DROP, sl.GAIN, sl.COST
 CAP = 3
@@ -267,7 +278,8 @@ def plan_lot(bars: list[Bar], lot: Lot, expiries: list[str], split_dates: list[s
     """A hospital lot's calls from the share closes alone, assuming no assignment: each (sale session,
     expiry, end session, how the call ends), up to the first expiry whose close is at or over 104% of the
     lot's cost or the window's end. Under every strike rule the lot has ended by then (a close that high
-    either assigns the call or lets it expire and sells the shares), so this bounds every rule's path."""
+    either assigns the call or lets it expire and sells the shares), so this bounds every rule's path when
+    every sale goes through. The paths requested are wider (`reachable_sales`): a sale can wait."""
     dates = [b.date for b in bars]
     out, idx = [], lot.hospital
     while True:
@@ -282,13 +294,30 @@ def plan_lot(bars: list[Bar], lot: Lot, expiries: list[str], split_dates: list[s
         idx = end if how == "expiry" else end + 1
 
 
+def reachable_sales(bars: list[Bar], lot: Lot, expiries: list[str], split_dates: list[str], last: int):
+    """Every (sale session, expiry, end session) a hospital lot's calls can read under any rule and any store:
+    a call can be sold on every session from the hospital day to the window's last that `next_sale` accepts,
+    because a sale that finds no chain or no strike waits for the next session (`run_call_arm`), and a sale's
+    reads run from it to its segment's end (the sale, then `last_quote` back from the end). `plan_lot`'s
+    path, which assumes every sale goes through, is one path among these."""
+    dates = [b.date for b in bars]
+    for j in range(lot.hospital, last + 1):
+        exp = pick_expiry(dates[j], expiries)
+        if exp is None or _cut(dates, split_dates, j) == j:
+            continue
+        end, _ = segment_end(dates, j, exp, split_dates, last)
+        yield j, exp, end
+
+
 def path_requests(sym: str, bars: list[Bar], lots: list[Lot], expiries, split_dates, last) -> list[dict]:
-    """Every (expiry, start, through) path the hospital lots could use, one per (name, expiry)."""
+    """Every (expiry, start, through) path the hospital lots could read, one per (name, expiry): each session
+    a call can be sold from (`reachable_sales`), not only `plan_lot`'s path, so a sale that waits a session for
+    a chain or a strike reads only paths the study declared (#1439)."""
     span: dict[str, list[str]] = {}
     for lot in lots:
         if lot.hospital is None:
             continue
-        for j, exp, end, _ in plan_lot(bars, lot, expiries, split_dates, last):
+        for j, exp, end in reachable_sales(bars, lot, expiries, split_dates, last):
             a, b = bars[j].date, bars[end].date
             have = span.setdefault(exp, [a, b])
             have[0], have[1] = min(have[0], a), max(have[1], b)
