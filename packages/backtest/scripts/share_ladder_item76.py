@@ -704,10 +704,16 @@ def load_bars(sym: str) -> tuple[list[Bar], list[str]]:
 
 def holdout_end_for(recorded: dict | None, last_sessions: list[str]) -> tuple[str, bool]:
     """The holdout's last session and whether it was kept: a recorded plan's, so a re-plan measures the
-    window the study was declared and run on; else the earlier of the names' last sessions."""
-    if recorded and recorded.get("holdout"):
-        return recorded["holdout"][1], True
-    return min(last_sessions), False
+    window the study was declared and run on; else the earlier of the names' last sessions. A recorded
+    holdout that is not a start and an end, or ends after the data, stops the plan rather than move it."""
+    if not recorded or not recorded.get("holdout"):
+        return min(last_sessions), False
+    h = recorded["holdout"]
+    if not (isinstance(h, list) and len(h) == 2 and all(isinstance(x, str) for x in h)):
+        raise SystemExit(f"plan.json's holdout {h!r} is not [start, end]: fix or remove it to re-plan")
+    if h[1] > min(last_sessions):
+        raise SystemExit(f"plan.json's holdout ends {h[1]}, after the data's last session {min(last_sessions)}")
+    return h[1], True
 
 
 def cmd_plan(args) -> int:

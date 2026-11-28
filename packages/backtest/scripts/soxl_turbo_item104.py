@@ -691,7 +691,7 @@ def cmd_study(args) -> int:
     path = Path(args.out) if args.out else out_dir() / name
     path.write_text(json.dumps(doc, indent=1, default=str), encoding="utf-8")
     print(json.dumps({"written": str(path), "verdict": doc["verdict"], **report}))
-    return 0
+    return 2 if report.get("refused") else 0
 
 
 def smoke_warmup_arms() -> dict[str, str]:

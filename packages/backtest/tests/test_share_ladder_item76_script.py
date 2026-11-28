@@ -187,6 +187,10 @@ def test_a_replan_keeps_the_recorded_holdout_end_and_a_first_plan_takes_the_earl
     assert s76.holdout_end_for(recorded, ["2025-09-30", "2025-10-31"]) == ("2025-06-30", True)
     assert s76.holdout_end_for(None, ["2025-10-31", "2025-09-30"]) == ("2025-09-30", False)
     assert s76.holdout_end_for({}, ["2025-10-31"]) == ("2025-10-31", False)
+    with pytest.raises(SystemExit, match="not \\[start, end\\]"):
+        s76.holdout_end_for({"holdout": ["2025-01-02"]}, ["2025-10-31"])
+    with pytest.raises(SystemExit, match="after the data"):
+        s76.holdout_end_for({"holdout": ["2025-01-02", "2025-12-31"]}, ["2025-10-31"])
 
 
 def test_hospital_excludes_a_lot_sold_by_that_close_and_a_window_that_ends_first():
