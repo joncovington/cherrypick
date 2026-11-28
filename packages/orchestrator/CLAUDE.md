@@ -267,7 +267,9 @@ filename; override with `paper.sla_state_prefix`.
   and the live-positions check's after-close cut all use it, so a half day's `in_session` ends at 13:00
   and an unsettled book is flagged from 13:30. The job table's own windows (a loop's `window_end`, a
   daily job's time) are fixed by the table, not the day, so `upgrade`'s quiet window, derived from them,
-  is the same on every trading day. `MARKET_CLOSE` is only the fallback and `upgrade`'s settle-band
+  is the same on every trading day. A module that settles at a fixed time (MEIC's
+  `expiration_settlement_time`, 16:00) holds nothing to settle on a half day, since no module enters on one; one
+  that did would read as overdue from 13:30. `MARKET_CLOSE` is only the fallback and `upgrade`'s settle-band
   anchor (`test_timeutil.py`, `test_watchdog_live.py`, `test_watchdog_settle_and_stall.py`,
   `test_livepositions.py`; each was shown to fail on the fixed constant).
 - **A reminder reads an allow-list and acts on nothing** (`reminders.py`). Its conditions

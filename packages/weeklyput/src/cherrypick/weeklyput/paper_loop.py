@@ -549,7 +549,11 @@ def main(argv=None) -> int:
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--interval", type=int, metavar="SECONDS")
     ap.add_argument("--status", action="store_true")
-    ap.add_argument("--force", action="store_true", help="act now, outside the window (testing only)")
+    ap.add_argument(
+        "--force",
+        action="store_true",
+        help="act now, outside the window (testing only; a half day is still refused and journaled as missed)",
+    )
     ap.add_argument("--settle", action="store_true", help="settle by hand at the official close")
     ap.add_argument("--date")
     ap.add_argument("--symbol")
