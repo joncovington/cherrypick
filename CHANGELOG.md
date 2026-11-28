@@ -16,6 +16,11 @@ beyond the latest release.
 - **`upgrade` checks the release ZIP against a SHA-256 before it unzips, and four small security gaps close.**
   The release workflow adds the digest of the tag's source ZIP to the published manifest; a ZIP upgrade that downloads something else stops before unzipping, and a manifest with no checksum warns and goes on if you confirm. A change of the live arm now journals `live_arm_change_attempted` first and `live_arm_changed` only once the config write landed (`live_arm_change_failed` otherwise). The demo console drops inherited per-scope data and log directory overrides, the replay token mask shows two characters instead of eight, and CI pins `pnpm/action-setup` to a commit. Nothing to do.
 
+- **The watchdog's settlement checks follow an early close.** The paper and live settlement checks count
+  their grace from the day's own close (13:00 on a half day, not 16:00), and the live-positions check drops
+  the day's expired contracts from 13:00, so an unsettled book is flagged three hours sooner on 2026-12-24
+  and settled 0DTE legs no longer read as a mismatch until 16:00. `weeklyput`'s `--force` skips the window
+  but never the half-day refusal. Nothing to do.
 - **A chain fetch no longer asks the vendor for a day that is not a trading session, and the store's
   quality report lists any such day it holds.** The vendor answers a Saturday with a placeholder market
   (every option bid 0.05, ask 99.00), which a study read as a session. `fetch-chains` counts these
