@@ -287,8 +287,10 @@ def set_live_arm(
         return _refuse("journal_unwritable", "the arm journal cannot be written, so the change was not made")
     try:
         written = configedit.backup_and_write(Path(path), new_text, MODULE)
-    except OSError as exc:
+    except Exception as exc:
         _live.record_event(MODULE, "live_arm_change_failed", **fields, error=type(exc).__name__)
+        if not isinstance(exc, OSError):
+            raise
         return _refuse("write_failed", f"the config could not be written ({exc}); the live arm is unchanged")
     _live.record_event(MODULE, "live_arm_changed", **fields)
     return {

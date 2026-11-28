@@ -293,6 +293,7 @@ def test_launcher_drops_per_scope_directory_overrides_that_would_beat_the_demo_h
         "EARNINGS_LOGS_DIR",
         "TECHNICALS_DATA_DIR",
         "MEIC_CONFIG",
+        "MEIC_DB_PATH",
         "CHERRYPICK_MODULES_HOME",
     )
     env = launcher.demo_env({"PATH": "p", **{n: "/real" for n in names}}, tmp_path)

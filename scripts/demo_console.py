@@ -28,7 +28,7 @@ SERVER = REPO / "packages" / "console" / "server" / "dist" / "index.js"
 SECRETISH = re.compile(r"(TOKEN|SECRET|OAUTH|CLIENT_ID|BROKER|PASSWORD|CREDENTIAL)", re.I)
 # A per-scope directory override (cherrypick.core.home) wins over CHERRYPICK_HOME for its one scope, so
 # an inherited MEIC_DATA_DIR would point the demo at the real trade data. Drop every such name.
-SCOPE_OVERRIDE = re.compile(r"(_DATA_DIR|_LOGS_DIR|_CONFIG)$|^CHERRYPICK_MODULES_HOME$", re.I)
+SCOPE_OVERRIDE = re.compile(r"(_DATA_DIR|_LOGS_DIR|_CONFIG|_DB_PATH)$|^CHERRYPICK_MODULES_HOME$", re.I)
 
 
 class Refused(SystemExit):
