@@ -161,6 +161,25 @@ def test_after_the_close_todays_expired_contracts_are_left_out_of_both_sides(mon
     assert [(d["expiry"], d["kind"]) for d in acct["diffs"]] == [("2026-10-09", "unrecorded")]
 
 
+@pytest.mark.parametrize(
+    ("when", "dropped"),
+    [
+        (datetime(2026, 11, 27, 13, 30), 1),  # an early close: the 13:00 close has passed
+        (datetime(2026, 11, 27, 12, 30), 0),  # still before it
+        (datetime(2026, 11, 20, 13, 30), 0),  # an ordinary day, the same time: the close is 16:00
+    ],
+)
+def test_the_close_that_drops_todays_expired_contracts_is_the_days_own(monkeypatch, when, dropped):
+    """The fixed `hour >= 16` kept an early close's settled 0DTE legs in the comparison until 16:00, so
+    the ledger (settled) and the broker (still listing them) read as a mismatch. Put `when.hour >= 16`
+    back and the early-close case fails."""
+    monkeypatch.setattr(lp.timeutil, "now_et", lambda *a, **k: when)
+    today = when.strftime("%y%m%d")
+    fetch = broker(pos(f"SPXW  {today}P05800000", 1, "Short"))
+    out = lp.evaluate({"bwb": module()}, {"bwb": ACCT}, fetch, None)
+    assert out["accounts"][0]["expired_unprocessed"] == dropped
+
+
 # --------------------------------------------------------------------------- declared expiries
 # 2026-10-30: a hand-placed SPX condor expiring 11-20 in MEIC's account read as four unrecorded
 # fills. MEIC names the expiries it trades; the account's other expiries are left out.

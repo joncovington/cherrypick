@@ -20,6 +20,11 @@ beyond the latest release.
   once a day, and a refusal is a WARN naming the file and the message. Every save of `automations.json`
   (the Config page, the settings tool, the Groups, Builder and retire saves) runs it on the candidate
   text first and refuses what the loop would refuse. Nothing to do.
+- **The watchdog's settlement checks follow an early close.** The paper and live settlement checks count
+  their grace from the day's own close (13:00 on a half day, not 16:00), and the live-positions check drops
+  the day's expired contracts from 13:00, so an unsettled book is flagged three hours sooner on 2026-12-24
+  and settled 0DTE legs no longer read as a mismatch until 16:00. `weeklyput`'s `--force` skips the window
+  but never the half-day refusal. Nothing to do.
 - **A chain fetch no longer asks the vendor for a day that is not a trading session, and the store's
   quality report lists any such day it holds.** The vendor answers a Saturday with a placeholder market
   (every option bid 0.05, ask 99.00), which a study read as a session. `fetch-chains` counts these

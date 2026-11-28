@@ -1867,15 +1867,17 @@ def _check_settlement(name: str, mcfg: dict[str, Any], now_et: datetime, is_trad
 
     Opt-in via `paper.settlement_check` so it only shells to `--status` for a module that exposes the
     signal (never MEIC's status path). Gated to the module's settle time + a retry buffer (not merely
-    the 16:00 close): a module settles a bit after the close (flies at 16:20) and retries for a few
+    the close): a module settles a bit after the close (flies at 16:20) and retries for a few
     minutes, so open positions in that window are NOT yet overdue — firing at the close alone
-    false-alarmed every day between 16:00 and 16:20.
+    false-alarmed every day between 16:00 and 16:20. The close is the day's own (13:00 on an early
+    close, `timeutil.session_close`), so the grace starts there.
     """
     paper = mcfg.get("paper", {})
     if not (is_trading and paper.get("settlement_check") and paper.get("status_argv")):
         return []
     grace = int(paper.get("settlement_grace_minutes", 30))  # past settle time (~16:20) + retries
-    close_min = timeutil.MARKET_CLOSE.hour * 60 + timeutil.MARKET_CLOSE.minute
+    close = timeutil.session_close(now_et)  # the day's own close: 13:00 on an early close
+    close_min = close.hour * 60 + close.minute
     if now_et.hour * 60 + now_et.minute < close_min + grace:
         return []
     label = name.upper() if len(name) <= 4 else name.capitalize()
@@ -2436,7 +2438,8 @@ def _check_live(
             findings.append(outage)
 
     # (c) live settlement overdue: same shape as the paper check, over the live status.
-    close_min = timeutil.MARKET_CLOSE.hour * 60 + timeutil.MARKET_CLOSE.minute
+    close = timeutil.session_close(now_et)  # the day's own close: 13:00 on an early close
+    close_min = close.hour * 60 + close.minute
     settle_grace = int(live.get("settlement_grace_minutes", 30))
     if status and now_minute >= close_min + settle_grace:
         if status.get("session_settled") is False and (status.get("open_positions") or 0) > 0:

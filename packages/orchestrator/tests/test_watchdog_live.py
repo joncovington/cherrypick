@@ -347,3 +347,27 @@ def test_a_live_tick_still_running_past_disarm_still_halts(monkeypatch, tmp_path
     out = wd._check_live("flies", _mcfg(), _PAST_DISARM, False)
     (f,) = [f for f in out if f.key == "flies.live_disarm"]
     assert f.status == CRITICAL and (tmp_path / "halt-live.flag").exists() and rec.exists()
+
+
+@pytest.mark.parametrize(
+    ("day", "overdue"),
+    [
+        ("2026-11-27", True),  # an early close: 13:00 plus the 30-minute grace is 13:30
+        ("2026-11-20", False),  # an ordinary Friday: the same 13:45 is three hours before the close
+    ],
+)
+def test_live_settle_overdue_counts_from_the_days_own_close(monkeypatch, tmp_path, day, overdue):
+    """On 2026-11-27 the close was 13:00, and a fixed 16:00 left an unsettled live book unflagged for
+    three more hours. Put the fixed `MARKET_CLOSE` back in `_check_live` and the early-close case fails."""
+    _setup(
+        monkeypatch,
+        tmp_path,
+        status_obj={"armed_for": day, "session_settled": False, "open_positions": 2},
+        registered=False,
+    )
+    year, month, dom = (int(x) for x in day.split("-"))
+    out = wd._check_live("flies", _mcfg(), datetime(year, month, dom, 13, 45), False)
+    settle = [f for f in out if f.key == "flies.live_settle_overdue"]
+    assert bool(settle) is overdue
+    if overdue:
+        assert settle[0].status == WARN
