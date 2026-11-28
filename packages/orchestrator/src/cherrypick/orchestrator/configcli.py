@@ -51,10 +51,14 @@ def _op_load(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]:
         return _err(str(exc), "not_found")
 
 
-def _op_save(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]:
+def _op_save(cfg: dict[str, Any], req: dict[str, Any], status_fn=livearm.run_module_status) -> dict[str, Any]:
     """Splice every edit into the file's text, then hand the result to the raw-save path — so a
     section's worth of edits is one backup, one atomic write, and one mtime check, and a refusal
-    part-way leaves the file untouched."""
+    part-way leaves the file untouched.
+
+    Refused before anything is spliced: a guarded pointer, a pointer outside the target's allow-list
+    (`configedit.EDITABLE`, the fields the Config page offers), and switching MEIC off while one of its
+    live accounts is not flat and settled (`livearm.module_off_refusal`)."""
     target = req.get("target")
     edits = req.get("edits")
     if not isinstance(target, str) or not isinstance(edits, list) or not edits:
@@ -67,6 +71,12 @@ def _op_save(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]:
         pointer = edit["pointer"]
         if pointer in guarded:
             return _err(f"{pointer} is guarded — {guarded[pointer]}", "guarded", pointer=pointer)
+        if not configedit.editable(target, pointer):
+            return _err(
+                f"{pointer} is not a field this surface edits on '{target}'; edit it by hand",
+                "guarded",
+                pointer=pointer,
+            )
 
     try:
         path = configedit._target_path(cfg, target)
@@ -76,6 +86,17 @@ def _op_save(cfg: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]:
         return _err(f"target '{target}' has no config file yet", "not_found")
 
     text = path.read_text(encoding="utf-8")
+    if target == "orchestrator" and any(
+        e["pointer"] == livearm.MODULE_SWITCH and not e.get("value") for e in edits
+    ):
+        try:
+            on_now = bool((json.loads(text).get("modules") or {}).get(livearm.MODULE, {}).get("enabled"))
+        except (ValueError, AttributeError):
+            on_now = True  # a file that cannot be read is not known to have MEIC off
+        if on_now:
+            refused = livearm.module_off_refusal(cfg, status_fn)
+            if refused is not None:
+                return {**refused, "pointer": livearm.MODULE_SWITCH}
     for edit in edits:
         try:
             text = configedit.splice_or_add(cfg, target, text, edit["pointer"], edit.get("value"))

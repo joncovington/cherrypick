@@ -339,7 +339,15 @@ filename; override with `paper.sla_state_prefix`.
 - **`configcli.py`** is the same two modules for non-Python callers (the console): one JSON request on
   stdin, one response on stdout. Dispatch only — every guarantee above is inherited, `secretsops` is
   deliberately NOT wired in, and a refusal is data (`ok: false` plus a `code`) on exit 0 so a caller
-  can tell "the config said no" from "the bridge is broken". Keep new ops thin. A `save` edit at a
+  can tell "the config said no" from "the bridge is broken". Keep new ops thin. On the orchestrator
+  target a `save` edit is held to `configedit.EDITABLE`, the fields the Config page offers (`*` one
+  segment; `test_config_guards_1501.py` holds it to `fieldMeta.ts`): any other pointer is refused
+  `guarded`, so the supervisor's argv, paths and job switches are hand edits. The settings tool's own
+  editor is not held to it. Switching `modules.meic.enabled` off is refused (`not_flat`, or
+  `status_unreadable`) unless every MEIC live account, the main one and each other login's, is flat and
+  settled by `livearm.not_flat`: the switch removes the live jobs that manage a held book. On
+  `meic-risk`, the profile each MEIC live loop trades (`live.arm`, `live_accounts.<login>.arm`) is
+  guarded whole but its `enabled`, which live does not read. A `save` edit at a
   pointer the file does not have is refused (`not_found`), with one exception: a single top-level key
   the target's shipped example has and the person's older copy lacks is added at the end
   (`configedit.splice_or_add`, e.g. manage's `trades`, which `intent_set` adds on a first answer). A key the example does not have, and any key inside an absent block, stay refused

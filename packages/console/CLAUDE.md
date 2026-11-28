@@ -354,7 +354,11 @@ alone):
     says so.
   - What the page offers is an allow-list (`web/src/pages/Config/fieldMeta.ts`); the suite has no JSON
     schema, so that map is the form's schema. Every field must edit a key some code reads
-    (`configFieldsAreRead.test.ts`). Writes are gated like the orchestrator's settings server
+    (`configFieldsAreRead.test.ts`). For the orchestrator target the same list is enforced in Python
+    (`configedit.EDITABLE`, held to `fieldMeta.ts` by the orchestrator's `test_config_guards_1501.py`): a
+    save at any other orchestrator pointer is refused as `guarded`, so a new orchestrator field needs its
+    entry there too. Switching `modules.meic.enabled` off is refused (`not_flat`, 409, with blockers)
+    while a MEIC live account is not flat and settled. Writes are gated like the orchestrator's settings server
     (loopback Host, CSRF, JSON content type), deliberately **not** on the broker credential scope — a
     config file is not the broker.
 - **The Advisor page's two buttons are the second bounded exception, and hold no logic either.** Kill

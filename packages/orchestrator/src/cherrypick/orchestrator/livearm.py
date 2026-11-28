@@ -58,12 +58,19 @@ def _refuse(code: str, error: str, **extra: Any) -> dict[str, Any]:
     return {"ok": False, "code": code, "error": error, **extra}
 
 
-def run_module_status(cfg: dict[str, Any]) -> dict[str, Any] | None:
-    """The module's own `live_loop --status` JSON (files and the ledger, never the broker), or None."""
+def run_module_status(cfg: dict[str, Any], login: str | None = None) -> dict[str, Any] | None:
+    """The module's own `live_loop --status` JSON (files and the ledger, never the broker), or None.
+    `login` reads another broker login's live account (`--login`), as its own live job runs it."""
     mcfg = (cfg.get("modules") or {}).get(MODULE) or {}
     try:
         r = subprocess.run(
-            [cfgmod.python_exe(), "-m", f"cherrypick.{MODULE}.live_loop", "--status"],
+            [
+                cfgmod.python_exe(),
+                "-m",
+                f"cherrypick.{MODULE}.live_loop",
+                "--status",
+                *(("--login", login) if login else ()),
+            ],
             cwd=str(cfgmod.module_root(mcfg, MODULE)),
             capture_output=True,
             text=True,
@@ -103,6 +110,40 @@ def not_flat(status: dict[str, Any]) -> list[str]:
     if status.get("orphaned_orders"):
         out.append("working orders at the broker are not in the ledger")
     return out
+
+
+#: The switch the Config page offers for MEIC, and the one that stops its live loops (#1501).
+MODULE_SWITCH = f"/modules/{MODULE}/enabled"
+
+
+def module_off_refusal(
+    cfg: dict[str, Any],
+    status_fn: Callable[[dict[str, Any], str | None], dict[str, Any] | None] = run_module_status,
+) -> dict[str, Any] | None:
+    """Why `modules.meic.enabled` may not be switched off now, as a refusal, or None when it may (#1501).
+
+    Switching the module off removes every MEIC live job, the main account's and each other login's,
+    and the main account's manages what its book holds even unarmed. So the switch goes off only when
+    every MEIC live account is flat and settled by `not_flat`, the rule the arm change uses. A status
+    that cannot be read refuses: unknown is not flat. Switching it on is never refused here."""
+    blockers: list[str] = []
+    for login in [None, *cfgmod.live_accounts(cfg, MODULE)]:
+        where = "the main account" if login is None else f"login {login}"
+        status = status_fn(cfg, login)
+        if status is None:
+            return _refuse(
+                "status_unreadable",
+                f"MEIC's live status for {where} cannot be read, so whether it holds a book is not known; "
+                "switching the module off would stop the loop that manages it",
+            )
+        blockers += [f"{where}: {b}" for b in not_flat(status)]
+    if blockers:
+        return _refuse(
+            "not_flat",
+            "switching MEIC off would stop the live loop that manages its book: " + "; ".join(blockers),
+            blockers=blockers,
+        )
+    return None
 
 
 def _registry_profiles() -> dict[str, Any]:

@@ -57,6 +57,18 @@ GUARDED: dict[str, dict[str, str]] = {
         # switch, symbol, arm, caps, kill criteria, attestation), so no key in it, and no entry
         # added or removed, is this surface's to write.
         "/live_accounts": "live accounts on other logins — written by hand, with their gates, never here",
+        # What a live entry or stop does once armed (#1501). The stop ratio and the delta targets are
+        # top-level keys paper reads too, so guarding them makes them hand-edit-only here for paper as
+        # well; the Config page offers none of them. Live trades the live arm's registry profile
+        # merged onto these, and that profile is guarded on the meic-risk target
+        # (`_live_arm_profile_violations`).
+        "/stop_trigger_ratio": "when a live side stops — hand-edit deliberately, never from here",
+        "/delta_target": "where a live entry's strikes sit — hand-edit deliberately, never from here",
+        "/delta_target_vix_low": "where a live entry's strikes sit — hand-edit deliberately, never from here",
+        "/delta_target_vix_elevated": "where a live entry's strikes sit — hand-edit deliberately, never here",
+        "/delta_target_vix_high": "where a live entry's strikes sit — hand-edit deliberately, never here",
+        "/delta_target_vix_crisis": "where a live entry's strikes sit — hand-edit deliberately, never here",
+        "/live/resting_stop": "a live stop resting at the broker — hand-edit deliberately, never from here",
     },
     # flies carried only the switch, the attestation and the two loss caps until 2026-09-23, while
     # bwb — whose live block is the same shape — guarded its arm selector, its margin cap and its
@@ -104,6 +116,54 @@ GUARDED: dict[str, dict[str, str]] = {
         "/live/account_deploy_limit_pct": "live risk cap — hand-edit deliberately, not from this surface",
     },
 }
+
+# The fields the console's save may write on a target held to an allow-list (#1501): exactly what the
+# Config page offers (`packages/console/web/src/pages/Config/fieldMeta.ts`; a test holds the two to each
+# other). `*` is one path segment. Anything else on the target is refused by `configcli`'s save, so a
+# crafted request cannot reach the supervisor's argv, paths or jobs. The settings tool's own editor
+# (`settings_serve`, a person at the keyboard) is not held to it. Targets not named here keep `GUARDED`.
+EDITABLE: dict[str, tuple[str, ...]] = {
+    "orchestrator": (
+        "/modules/*/enabled",
+        "/broker/logins/*/alerts",
+        "/broker/logins/*/label",
+        "/broker/logins/*/manage",
+        "/config_backup/enabled",
+        "/config_backup/interval_minutes",
+        "/config_backup/push",
+        "/console/dev_backoff_seconds",
+        "/manage/at",
+        "/manage/enabled",
+        "/manage/notify",
+        "/notify/channels",
+        "/notify/trade_channels",
+        "/notify/trade_summary/mode",
+        "/reconcile/schedule/enabled",
+        "/review/narrative",
+        "/streamer/instances",
+        "/trade_notify/interval_seconds",
+        "/watchdog/interval_minutes",
+        "/watchdog/renotify_minutes",
+    ),
+}
+
+
+def editable(target_id: str, pointer: str) -> bool:
+    """Whether the console's save may write `pointer` on `target_id`: always for a target with no
+    allow-list, else only a pointer one of its `EDITABLE` patterns matches segment for segment."""
+    patterns = EDITABLE.get(target_id)
+    if patterns is None:
+        return True
+    try:
+        want = _pointer_tokens(pointer)
+    except ValueError:
+        return False
+    for pattern in patterns:
+        have = _pointer_tokens(pattern)
+        if len(have) == len(want) and all(h in ("*", w) for h, w in zip(have, want, strict=True)):
+            return True
+    return False
+
 
 # Keys whose change breaks an orchestrator coupling if done silently (docs/configuration-and-storage.md):
 # a module's paper_db + trade_schema pair, and keyring_service + account designation. Any edit touching
@@ -447,11 +507,62 @@ _MISSING = object()
 def guard_violations(target_id: str, old_doc: Any, new_doc: Any) -> list[str]:
     """Guarded pointers whose value differs between the old and new documents (including appearing or
     disappearing). Non-empty means the save must be refused."""
-    return [
+    out = [
         ptr
         for ptr in GUARDED.get(target_id, {})
         if _at(old_doc, _pointer_tokens(ptr)) != _at(new_doc, _pointer_tokens(ptr))
     ]
+    if target_id == "meic-risk":
+        out += _live_arm_profile_violations(old_doc, new_doc)
+    return out
+
+
+# MEIC's arm registry spells its arms under any of these (older files say profiles or books).
+_REGISTRY_KEYS = ("arms", "profiles", "books")
+
+
+def _live_arm_names() -> list[str] | None:
+    """The registry arms MEIC's live loops trade: `live.arm`, and each other login's
+    `live_accounts.<login>.arm`, from MEIC's own config. None when it cannot be read."""
+    try:
+        doc = json.loads(_home.config_path("meic").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return []
+    except (OSError, ValueError):
+        return None
+    if not isinstance(doc, dict):
+        return None
+    arms = [str((doc.get("live") or {}).get("arm") or "").strip()]
+    for block in (doc.get("live_accounts") or {}).values():
+        if isinstance(block, dict):
+            arms.append(str(block.get("arm") or "").strip())
+    return sorted({a for a in arms if a})
+
+
+def _live_arm_profile_violations(old_doc: Any, new_doc: Any) -> list[str]:
+    """A live arm's registry profile changed, `enabled` aside (#1501). Live trades that profile merged
+    onto MEIC's top level (`meic.paper._live_resolution`), so its stop ratio, deltas and every other
+    key are live settings; `enabled` is paper's switch for the arm, and live does not read it. When
+    MEIC's config cannot be read, which arm is live is unknown, so every profile is held."""
+    names = _live_arm_names()
+
+    def body(doc: Any, key: str, arm: str) -> Any:
+        found = _at(doc, [key, arm])
+        return {k: v for k, v in found.items() if k != "enabled"} if isinstance(found, dict) else found
+
+    out = []
+    for key in _REGISTRY_KEYS:
+        arms = names
+        if arms is None:
+            old_arms, new_arms = _at(old_doc, [key]), _at(new_doc, [key])
+            arms = sorted(
+                {
+                    *(old_arms if isinstance(old_arms, dict) else {}),
+                    *(new_arms if isinstance(new_arms, dict) else {}),
+                }
+            )
+        out += [f"/{key}/{arm}" for arm in arms if body(old_doc, key, arm) != body(new_doc, key, arm)]
+    return out
 
 
 def coupled_warnings(old_doc: Any, new_doc: Any) -> list[tuple[str, str]]:
