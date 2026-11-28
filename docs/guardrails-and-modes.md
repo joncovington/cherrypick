@@ -76,6 +76,8 @@ The **only** live-adjacent action the orchestrator performs is onboarding *confi
 - `account --module <m>` selects **which account** a module trades in when live (meic, flies, bwb; earnings is paper-only), writing that account's
   `ACCOUNT_NUMBER` into the module's keyring (service = its `keyring_service`), checked against the
   broker's own list. The settings editor shows that account masked but refuses to set or delete it.
+  `account` refuses to set or clear it while that module's live loop is armed today or its live book
+  holds a position or working order, with no override.
 
 The boundary is strict: it still **never** places/cancels/closes/adjusts an order, never flips
 `enable_live_trading`, never writes an arm record, and never edits a module's code/config files. (It

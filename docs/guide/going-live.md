@@ -117,6 +117,13 @@ python packages/orchestrator/run.py account --module meic --clear
 `--set` takes the last four digits of the account or its index in the list. The suite shows accounts
 masked, as `****0000`, everywhere. `account` changes configuration only; it places nothing.
 
+`--set` and `--clear` refuse while a live loop that account reaches is armed for today or holds a
+position or a working order. MEIC's main account manages its book even when it is not armed, so a
+disarmed loop with an open position still refuses. There is no override: change the account once the
+loop is disarmed and the book is flat. The suite-wide account is checked against every module that
+inherits it, and a second login's account against that login alone. If a loop's status cannot be read,
+the change is refused too, and the message says why. The console's account step gets the same refusal.
+
 ## A second tastytrade login
 
 The designation, and every live order, stay on the login you connected first. Another tastytrade
