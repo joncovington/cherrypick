@@ -75,8 +75,8 @@ def test_a_halt_refuses_an_open_and_lets_a_close_through(submit):
     run, reached = submit
     _halt()
     out = run("Sell to Open")
-    assert out["ok"] is False and out["reason"] == "manual_open_refused" and "halt flag" in out["error"]
     assert reached == []
+    assert out["ok"] is False and out["reason"] == "manual_open_refused" and "halt flag" in out["error"]
     run("Buy to Close")
     assert reached == [True]
 
