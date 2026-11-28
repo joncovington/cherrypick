@@ -46,6 +46,7 @@ def test_every_mutant_names_a_test_that_exists(mutant):
     root = Path(__file__).resolve().parents[2] / mutant.package
     for node in mutant.tests:
         path, _, func = node.partition("::")
+        func = func.partition("[")[0]  # a parametrized case names its function before the bracket
         assert (root / path).exists(), node
         assert f"def {func}(" in (root / path).read_text(encoding="utf-8"), node
 
@@ -145,3 +146,120 @@ def test_a_vanished_target_is_an_error(monkeypatch):
     )
     report = runner.check([gone])
     assert not report["ok"] and report["mutants"][0]["verdict"] == "error"
+
+
+FAILED_REPORT = {
+    "ok": False,
+    "baseline": {},
+    "mutants": [{"id": "fake", "verdict": "survived", "breaks": "x", "detail": "1 passed"}],
+}
+
+
+def _run_main(monkeypatch, tmp_path, argv, capsys):
+    """Drive main() on a failing verdict with the notifier, the state file and the checkout stubbed;
+    return (what the notifier was sent, the state file's path, stderr)."""
+    import types
+
+    sent, state = [], tmp_path / "guard-mutants.last.json"
+
+    class Recorder:
+        def __init__(self, _cfg=None):
+            pass
+
+        def notify(self, *args):
+            sent.append(args)
+
+    notifier = types.ModuleType("cherrypick.notify.notifier")
+    notifier.Notifier = Recorder
+    monkeypatch.setitem(sys.modules, "cherrypick.notify", types.ModuleType("cherrypick.notify"))
+    monkeypatch.setitem(sys.modules, "cherrypick.notify.notifier", notifier)
+    from cherrypick.orchestrator import config as cfgmod
+
+    monkeypatch.setattr(cfgmod, "load_config", lambda: {})
+    monkeypatch.setattr(runner._plugin, "MUTANTS", (FAKE,))
+    monkeypatch.setattr(runner, "checkout_fingerprint", lambda: "abc")
+    monkeypatch.setattr(runner, "_last_report", lambda: {})
+    monkeypatch.setattr(runner, "_state_path", lambda: state)
+    monkeypatch.setattr(runner, "check", lambda ms: dict(FAILED_REPORT))
+    assert runner.main(argv) == 1
+    return sent, state, capsys.readouterr().err
+
+
+def test_the_scheduled_job_pushes_a_failure_through_the_notifier(monkeypatch, tmp_path, capsys):
+    """The one run that tells the owner: `--if-changed`, the supervisor's `guard-mutants` job argv."""
+    sent, state, err = _run_main(monkeypatch, tmp_path, ["--if-changed"], capsys)
+    assert len(sent) == 1 and sent[0][0] == "WARNING"
+    assert "survived" in err and state.exists()
+
+
+@pytest.mark.parametrize("argv", [[], ["--only", "fake"]], ids=["whole_table_by_hand", "partial_by_hand"])
+def test_a_run_by_hand_reports_on_stderr_and_tells_no_one_else(monkeypatch, tmp_path, capsys, argv):
+    """Shown to fail by notifying on every failure, as it did: six hand runs reached the owner's chat."""
+    sent, _, err = _run_main(monkeypatch, tmp_path, argv, capsys)
+    assert sent == []
+    assert "WARNING: guard check" in err and "survived" in err
+
+
+REPO = Path(__file__).resolve().parents[3]
+
+
+def live_packages() -> set[str]:
+    """The packages that can place a live order, found from what the suite declares: a config example
+    with a live gate (`enable_live_trading` or `live.enabled`), less any the orchestrator's own
+    example marks `_retired` (they ship off and refuse to arm while off). Not a hand-kept list."""
+    import json
+
+    modules = json.loads((REPO / "packages/orchestrator/config.example.json").read_text(encoding="utf-8"))[
+        "modules"
+    ]
+    found = set()
+    for path in sorted((REPO / "packages").glob("*/config.example.json")):
+        package = path.parent.name
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        live = doc.get("live")
+        gated = "enable_live_trading" in doc or (isinstance(live, dict) and "enabled" in live)
+        if gated and "_retired" not in (modules.get(package) or {}):
+            found.add(package)
+    return found
+
+
+def packages_without_a_mutant(mutants) -> set[str]:
+    return live_packages() - {m.package for m in mutants}
+
+
+def test_every_package_that_can_place_a_live_order_has_a_guard_mutant():
+    """A guard on a live-order path adds its mutant to the table in the same PR (working-rules.md); this
+    is the floor under that rule: a live package with no mutant at all fails here."""
+    assert live_packages() >= {"meic", "ladder"}, "the discovery found nothing: fix it, do not skip it"
+    assert not packages_without_a_mutant(plugin.MUTANTS), sorted(packages_without_a_mutant(plugin.MUTANTS))
+
+
+def test_the_live_package_check_fails_when_a_package_loses_its_mutants():
+    """Shown to fire: the table with meic's mutants removed, and with ladder's, names that package."""
+    for package in ("meic", "ladder"):
+        without = [m for m in plugin.MUTANTS if m.package != package]
+        assert packages_without_a_mutant(without) == {package}
+
+
+def test_a_retired_package_is_exempt_from_the_live_package_check():
+    assert not live_packages() & {"flies", "bwb"}
+
+
+def test_a_partial_run_writes_no_state_file(monkeypatch, tmp_path, capsys):
+    """It proves only its own mutants; a record of it would stand in for the whole table's last verdict.
+    Shown to fail by writing the record on every run."""
+    _, state, _ = _run_main(monkeypatch, tmp_path, ["--only", "fake"], capsys)
+    assert not state.exists()
+
+
+def test_a_whole_table_run_by_hand_still_writes_the_state_file(monkeypatch, tmp_path, capsys):
+    _, state, _ = _run_main(monkeypatch, tmp_path, [], capsys)
+    assert state.exists()
+
+
+def test_the_supervisors_job_passes_if_changed():
+    """The notification keys on this argument: the job must keep passing it."""
+    source = (Path(__file__).resolve().parents[1] / "src/cherrypick/orchestrator/jobspec.py").read_text(
+        encoding="utf-8"
+    )
+    assert '_suite_script(launcher, "guard_mutants.py"), "--if-changed"' in source

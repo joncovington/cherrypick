@@ -13,6 +13,15 @@ beyond the latest release.
 
 ### What's new
 
+- **MEIC's remaining live guards each have a guard mutant, a new live guard must add its own, and a hand
+  run of the guard check no longer reaches your chat.** The designated account, the quarter-end refusal,
+  the manual door's size cap, the one-contract limit, the account restriction and PDT blockers, the
+  resting stops and the manage-only tick on a failed snapshot now fail a test when broken (eleven new
+  mutants). A test fails a package that can place a live order and has no mutant. The guard check pushes
+  its WARNING to the notify channels only when the scheduled `guard-mutants` job runs it; a run by hand
+  reports on its own terminal, and a partial `--only` run no longer overwrites the state file. Three
+  MEIC arm-registry tests that failed on a configured machine now read a frozen copy of the roster
+  instead of the machine's own registry. Nothing to do.
 - **A chain fetch no longer asks the vendor for a day that is not a trading session, and the store's
   quality report lists any such day it holds.** The vendor answers a Saturday with a placeholder market
   (every option bid 0.05, ask 99.00), which a study read as a session. `fetch-chains` counts these

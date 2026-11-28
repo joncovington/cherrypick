@@ -1,10 +1,11 @@
 """Unit tests for the risk-profile / arm-stream system: the arm registry and profile switching.
 
 Two registries, two kinds of test. The SHIPPED example (`config.risk.example.json`, control only) is
-what a fresh install runs, and its tests run everywhere. A machine's OWN registry
-(`~/.cherrypick/config/meic.risk.json`, see paths.risk_profiles_path) is that machine's configuration
--- the roster tests below pin the arms THIS suite's author runs, read-only from the real home, and skip
-with a stated reason on a machine (or CI) that has none.
+what a fresh install runs. The ROSTER registry (`fixtures/meic.risk.roster.json`) is a frozen copy of the
+arms the author runs, which the roster tests pin; a machine's OWN registry
+(`~/.cherrypick/config/meic.risk.json`, see paths.risk_profiles_path) is never what they read. Only the
+two tests that compare arms to live's own config read it, read-only, and skip on a machine (or CI)
+that has none.
 """
 
 from __future__ import annotations
@@ -73,18 +74,28 @@ META_KEYS = {"enabled", "follows_live"}
 
 
 EXAMPLE_REGISTRY = Path(__file__).parent.parent / "config.risk.example.json"
-# The REAL home, not the session's throwaway one (conftest redirects CHERRYPICK_HOME): read-only.
+# The roster the tests below pin, frozen in the repo: a copy of the arms the author's machine ran when
+# the roster was last declared. It is never read from a machine's own registry, so what a machine adds
+# (a new arm, a retuned gate) cannot turn this suite red, and CI runs the same registry a developer does.
+ROSTER_REGISTRY = Path(__file__).parent / "fixtures" / "meic.risk.roster.json"
+# The REAL home, not the session's throwaway one (conftest redirects CHERRYPICK_HOME): read-only. Only
+# the two tests that compare the arms to what live trades read it, because live's own config is a
+# machine's; they skip where there is none.
 MACHINE_REGISTRY = Path.home() / ".cherrypick" / "config" / "meic.risk.json"
 
 
 @pytest.fixture
 def sample_risk_profiles():
-    """This machine's own arm registry, read-only. Skips where there is none: the roster it pins
-    is one machine's configuration, not the shipped default."""
+    """The frozen roster registry (tests/fixtures/meic.risk.roster.json), whatever this machine runs."""
+    with open(ROSTER_REGISTRY, encoding="utf-8") as f:
+        return json.load(f)
+
+
+@pytest.fixture
+def machine_risk_profiles():
+    """This machine's own arm registry, read-only. Skips where there is none."""
     if not MACHINE_REGISTRY.is_file():
-        pytest.skip(
-            f"no machine arm registry at {MACHINE_REGISTRY.name} -- roster tests pin a configured machine"
-        )
+        pytest.skip(f"no machine arm registry at {MACHINE_REGISTRY.name}")
     with open(MACHINE_REGISTRY, encoding="utf-8") as f:
         return json.load(f)
 
@@ -229,8 +240,8 @@ def _check_live_minus(profiles: dict, live_top: dict) -> None:
 _CODE_DEFAULTS = {"regime_gex_block_negative": True}
 
 
-def test_the_live_minus_arms_are_live_shadow_with_one_gate_relaxed(sample_risk_profiles):
-    profiles = sample_risk_profiles["profiles"]
+def test_the_live_minus_arms_are_live_shadow_with_one_gate_relaxed(machine_risk_profiles):
+    profiles = machine_risk_profiles["profiles"]
     if not set(LIVE_MINUS_ARMS) <= set(profiles):
         pytest.skip("live-minus arms not yet added to this machine's registry (from 2026-10-15)")
     if not any(profiles[n].get("enabled", True) for n in LIVE_MINUS_ARMS):
@@ -263,8 +274,8 @@ def test_the_live_minus_check_fails_on_a_second_relaxed_gate():
         _check_live_minus(profiles, live_top)
 
 
-def test_the_live_plus_arms_are_live_shadow_with_one_gate_restored(sample_risk_profiles):
-    profiles = sample_risk_profiles["profiles"]
+def test_the_live_plus_arms_are_live_shadow_with_one_gate_restored(machine_risk_profiles):
+    profiles = machine_risk_profiles["profiles"]
     if not set(LIVE_PLUS_ARMS) <= set(profiles):
         pytest.skip("live-plus arms not yet added to this machine's registry (from 2026-10-16)")
     live_top = json.loads((Path.home() / ".cherrypick" / "config" / "meic.json").read_text(encoding="utf-8"))

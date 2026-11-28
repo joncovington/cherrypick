@@ -158,11 +158,19 @@ decisions per symbol, one shared account-wide risk budget.
   publishes its ledger's order ids (`core.execution.publish_known_orders`) and counts the others' as
   known; an order none of them records blocks new entries, and a sweep that cannot look does too.
   An entry with a leg opposite one another live loop holds is refused (`core.livepositions`).
-- **Eleven live guards have a guard mutant.** The master switch, readiness, the arm record, the
+- **Twenty-two guard mutants cover the live path.** The master switch, readiness, the arm record, the
   halt, the daily-loss breaker, the kill criteria, the orphan sweep, the per-day cap, the dry-run
-  default, the manual door's refusal of an open and its pass for a close each have a `meic-*` mutant in
-  `scripts/guard_mutants_plugin.py`, run by the `guards` CI job when meic changes and by the pre-bell
-  `guard-mutants` job when the checkout changed. A new live guard adds its own.
+  default, the manual door's refusal of an open and its pass for a close, the designated account, the
+  quarter-end refusal, the manual door's size cap, the one-contract limit, the account restriction and
+  PDT blockers, the resting stops (placed, polled, cancelled before the loop's own close, the cancel
+  confirmed) and the manage-only tick on a failed snapshot (it manages, and a leg it cannot price fails
+  the tick) each have a `meic-*` mutant in `scripts/guard_mutants_plugin.py`, run by the `guards` CI
+  job when meic changes and by the pre-bell `guard-mutants` job when the checkout changed. A new live
+  guard adds its own in the same PR; an orchestrator test fails a live-capable package with none. A
+  mutant on an attribute a test or an autouse fixture also stubs is masked, so the quarter-end and
+  manual-door tests opt out of conftest's pins (`real_quarter_end`, `real_manual_gate`).
+  `test_a_halt_blocks_new_ics_and_still_force_closes_an_open_one` is the structural check of
+  `run_once`'s call order, which no attribute swap can break.
 - **Every live submit goes through `cherrypick.core.execution.Broker` (`make_broker`)**, which re-checks
   `readiness` on every submit and applies the deploy governor. `adjust_order` goes through
   `cherrypick.core.broker.replace_order` (same preflight and governor as `execute_trade`); a core test

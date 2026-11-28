@@ -4,8 +4,10 @@
 coverage and is worse than none. This runs each guard's test twice -- clean, where it must pass,
 and under its mutant (`guard_mutants_plugin.MUTANTS`), where it must fail on an assertion. A
 mutant whose tests still pass SURVIVED: the guard no longer catches the regression it was written
-for. That, a clean run failing, or a mutant that cannot even be applied (its target renamed) is a
-WARNING through the suite's notifier; a clean run says nothing.
+for. That, a clean run failing, or a mutant that cannot even be applied (its target renamed) is
+reported on stderr on every run. Only the scheduled job (`--if-changed`) also pushes it through the
+suite's notifier; a run by hand reports to its own terminal and tells no one else. A clean run says
+nothing.
 
 A guard can only stop failing when code changes -- the tests build their own fixtures, so no
 market data reaches them -- so the trigger is a change, not the calendar:
@@ -16,7 +18,8 @@ market data reaches them -- so the trigger is a change, not the calendar:
     a quiet morning costs one `git` call.
 
 Read-only: it runs tests, which build their fixtures in temporary homes, and patches code only
-inside each test process. Writes one summary to `state/guard-mutants.last.json`.
+inside each test process. A whole-table run writes one summary to `state/guard-mutants.last.json`; a
+partial run (`--only`) proves only its own mutants and writes nothing.
 
     python scripts/guard_mutants.py [--only ID ...] [--if-changed] [--json] [--list-packages]
 """
@@ -166,7 +169,9 @@ def _last_report() -> dict:
         return {}
 
 
-def _warn(report: dict) -> None:
+def _warn(report: dict, *, notify: bool) -> None:
+    """The stderr report, always; the push through the owner's notifier only when `notify` (the
+    scheduled job), so a run by hand never reaches the owner's channels."""
     bad = [r for r in report["mutants"] if r["verdict"] != "killed"]
     lines = [
         f"{r['id']}: {r['verdict']} -- {r['breaks']}" + (f"\n  {r['detail']}" if r.get("detail") else "")
@@ -175,6 +180,8 @@ def _warn(report: dict) -> None:
     lines += [f"baseline {p}: exit {b['exit']}" for p, b in report["baseline"].items() if not b["ok"]]
     message = "\n".join(lines) + "\nRun: python scripts/guard_mutants.py"
     print(f"WARNING: guard check\n{message}", file=sys.stderr)
+    if not notify:
+        return
     try:
         from cherrypick.notify.notifier import Notifier
         from cherrypick.orchestrator import config as cfgmod
@@ -217,13 +224,15 @@ def main(argv=None) -> int:
     report["ran_at"] = datetime.now(UTC).isoformat()
     report["seconds"] = round(time.monotonic() - started, 1)
     # A partial run (`--only`) proves only its own mutants, so it never vouches for the checkout.
+    # It writes no record at all: a hand run of a few mutants would replace the whole table's verdict.
     report["fingerprint"] = fingerprint if not args.only else None
-    try:
-        from cherrypick.core.jsonio import write_json_atomic
+    if not args.only:
+        try:
+            from cherrypick.core.jsonio import write_json_atomic
 
-        write_json_atomic(_state_path(), report, indent=2, default=None)
-    except Exception:  # noqa: BLE001 -- the verdict matters more than the record of it
-        pass
+            write_json_atomic(_state_path(), report, indent=2, default=None)
+        except Exception:  # noqa: BLE001 -- the verdict matters more than the record of it
+            pass
     if args.json:
         print(json.dumps(report, indent=2))
     else:
@@ -231,7 +240,7 @@ def main(argv=None) -> int:
             print(f"{r['verdict']:9} {r['id']:28} {r['breaks']}")
         print(f"{'OK' if report['ok'] else 'FAILED'} in {report['seconds']}s")
     if not report["ok"]:
-        _warn(report)
+        _warn(report, notify=args.if_changed)
     return 0 if report["ok"] else 1
 
 
