@@ -460,9 +460,10 @@ def run_once(
     phase, outcome = "mark", {}
     if cycle is not None:
         _ensure_pending(conn, config, cycle, today)
-        if not force and _cal.is_early_close(today):
+        if _cal.is_early_close(today):
             # Half days (an NYSE early close) are not tradeable, by rule: the week's entry is not made
             # up on another session, which would be a different rule from the one item 57 judged.
+            # `force` skips the window, never this: a forced run has no streamed puts to price from.
             phase = "half_day"
             outcome = record_misses(
                 config, conn, cycle=cycle, day=today, cache_path=cache_path, reason=HALF_DAY_REASON

@@ -261,6 +261,15 @@ filename; override with `paper.sla_state_prefix`.
 
 ## Invariants (do not violate — the reasons are load-bearing)
 
+- **A session gate reads the day's own close** (`timeutil.session_close`, from `core.calendar`: 13:00 on an
+  NYSE early close, 16:00 otherwise, 16:00 when the calendar cannot be read). `is_session_window`,
+  `is_market_hours`, the watchdog's paper and live settlement checks (the close plus the module's grace)
+  and the live-positions check's after-close cut all use it, so a half day's `in_session` ends at 13:00
+  and an unsettled book is flagged from 13:30. The job table's own windows (a loop's `window_end`, a
+  daily job's time) are fixed by the table, not the day, so `upgrade`'s quiet window, derived from them,
+  is the same on every trading day. `MARKET_CLOSE` is only the fallback and `upgrade`'s settle-band
+  anchor (`test_timeutil.py`, `test_watchdog_live.py`, `test_watchdog_settle_and_stall.py`,
+  `test_livepositions.py`; each was shown to fail on the fixed constant).
 - **A reminder reads an allow-list and acts on nothing** (`reminders.py`). Its conditions
   are `KINDS` (config's module switch, a module's own `--status` field), never a command, and a
   reminder only tells a person: it never changes config itself (`test_reminders.py`; each guard was

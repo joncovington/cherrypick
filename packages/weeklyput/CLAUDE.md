@@ -46,7 +46,10 @@ and the **unhedged** arm passed every check (Holm across the two arms, both time
    session, which would be a different rule from item 57's. The window is never used, so `run_status`
    says so (`half_day` true, `decision_window` and `entry_today` null, `entry_refused` the reason) and
    the stream request asks for nothing of that cycle, neither the warm chain the session before nor
-   the puts on the day. `clock.decision_window` itself still gives 12:45 to 12:55.
+   the puts on the day. `clock.decision_window` itself still gives 12:45 to 12:55. `--force` skips
+   the window and never this refusal: a forced run on a half day also refuses `half_day_no_entries`.
+   The refusal is a declared boundary: entries before 2026-11-27 (merge of #1491) may include a half
+   day's entry, entries from then on never do (the `half_day_no_entries` row in `measurement_breaks`).
 2. **A 10-delta that is not bracketed is refused** (`delta_not_bracketed`). The study's chains held
    every strike; the stream cache holds what was subscribed. The nearest quoted put is a different
    trade when the window stops short of the true 10-delta strike.
@@ -87,7 +90,7 @@ cycles, summary, marks, calendar).
 
 Commands to run the package, its tests and its lint are in [README.md](README.md#commands).
 
-`paper_loop --force` acts outside the window, for testing only.
+`paper_loop --force` acts outside the window, for testing only. It never overrides the half-day refusal.
 
 ## Boundaries
 
