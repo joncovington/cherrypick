@@ -56,6 +56,8 @@ class FakeBroker:
         self.extra: list[dict] = []  # positions the ladder did not make (options, hand-held shares)
         self.positions_error = False
         self.positions_calls = 0
+        self.refuse_validation: str | None = None  # the broker's dry run refuses with this reason
+        self.validation_error: Exception | None = None  # the broker's dry run cannot be reached
         # The account's cash read (`cash_funds`): margin unless a test makes it a cash account.
         self.funds: dict | None = {"margin_or_cash": "Margin", "cash_balance": 50_000.0,
                                    "cash_available_to_withdraw": 50_000.0, "equity_buying_power": 50_000.0,
@@ -79,6 +81,22 @@ class FakeBroker:
     def place(self, spec, live):
         eid = spec["external_identifier"]
         self.calls.append(("place", eid, live))
+        if not live:
+            # The broker's dry run: it checks the order and states its effect, and books nothing.
+            if self.refuse_validation:
+                return {
+                    "ok": False,
+                    "error": "pre-flight validation failed",
+                    "problems": [self.refuse_validation],
+                }
+            if self.validation_error is not None:
+                raise self.validation_error
+            return {
+                "ok": True,
+                "dry_run": True,
+                "buying_power": {"change": -round(spec["price"] * spec["legs"][0]["quantity"], 2)},
+                "response": {"fee_calculation": {"total_fees": "0.01"}, "warnings": []},
+            }
         oid = str(self.next_id)
         self.next_id += 1
         leg = spec["legs"][0]
@@ -410,7 +428,9 @@ def test_past_disarm_at_the_loop_disarms_even_with_a_gate_unmet(world, monkeypat
 def test_dry_run_sends_nothing_and_journals_the_intended_orders(world):
     cfg = live_config(dry_run=True)
     out = tick(world, cfg, "09:00")
-    assert world.broker.calls == [] and out["dry_run"] is True and out["placed"] == 1
+    # the one broker call is its own dry run of the intent: nothing goes out live, nothing is booked
+    assert world.broker.calls == [("place", BUY1, False)] and world.broker.book == {}
+    assert out["dry_run"] is True and out["placed"] == 1
     [row] = decisions(world, "dry_run")
     assert BUY1 in row["reason"] and row["accepted"] == 1
     detail = json.loads(row["detail"])
@@ -422,6 +442,85 @@ def test_dry_run_sends_nothing_and_journals_the_intended_orders(world):
     assert [i["what"] for i in live_tick.read_checks()["intents"]] == [
         f"place buy TQQQ {BUY1}"
     ]  # ... and is listed
+    assert world.broker.calls == [("place", BUY1, False)]  # ... and not validated again
+
+
+# --------------------------------------------------------------------------- validate-only (#1496)
+def test_a_dry_run_intent_carries_the_brokers_validation(world):
+    tick(world, live_config(dry_run=True), "09:00")
+    [row] = decisions(world, "dry_run")
+    v = json.loads(row["detail"])["validation"]
+    assert v["ok"] is True and v["fees"] == {"total_fees": "0.01"} and v["buying_power"] == {"change": -930.0}
+    assert "account" not in json.dumps(v)  # the verdict, never the account it was asked on
+    assert live_tick.read_checks()["intents"][0]["validation"]["ok"] is True
+
+
+def test_a_refused_intent_journals_the_brokers_reasons_and_is_not_asked_again(world):
+    world.broker.refuse_validation = "Extended hours orders are not allowed for this account"
+    cfg = live_config(dry_run=True)
+    tick(world, cfg, "09:00")
+    tick(world, cfg, "09:01")
+    [row] = decisions(world, "dry_run")
+    v = json.loads(row["detail"])["validation"]
+    assert v["ok"] is False and v["problems"] == ["Extended hours orders are not allowed for this account"]
+    assert world.broker.calls == [("place", BUY1, False)]  # an answer is an answer: asked once
+
+
+def test_an_unreachable_broker_is_asked_again_and_its_answer_lands_on_the_same_row(world):
+    world.broker.validation_error = TimeoutError("broker down")
+    cfg = live_config(dry_run=True)
+    tick(world, cfg, "09:00")
+    [row] = decisions(world, "dry_run")
+    assert json.loads(row["detail"])["validation"] == {"ok": False, "error": "TimeoutError: broker down"}
+    world.broker.validation_error = None
+    tick(world, cfg, "09:01")
+    [row] = decisions(world, "dry_run")  # still one row, now with the broker's answer
+    assert json.loads(row["detail"])["validation"]["ok"] is True
+    assert world.broker.calls == [("place", BUY1, False), ("place", BUY1, False)]
+    tick(world, cfg, "09:02")
+    assert len(world.broker.calls) == 2  # answered: not asked a third time
+
+
+def test_a_broker_that_gives_no_answer_is_asked_once_a_tick_not_once_an_intent(world):
+    """Each call can take its full deadline; one dead broker must not cost every intent that, in turn."""
+    world.cache.summary("SOXL", DAY, prev_day_close=50.0)
+    world.cache.quote("SOXL", 48.0, 48.1)
+    world.broker.validation_error = TimeoutError("broker down")
+    cfg = two_fund_config(dry_run=True)
+    tick(world, cfg, "09:00")
+    assert len(world.broker.calls) == 1  # the second fund's intent waits for the next tick
+    rows = decisions(world, "dry_run")
+    assert len(rows) == 2 and all(json.loads(r["detail"])["validation"]["ok"] is False for r in rows)
+    world.broker.validation_error = None
+    tick(world, cfg, "09:01")
+    assert len(world.broker.calls) == 3  # both asked again once the broker answers
+    assert all(json.loads(r["detail"])["validation"]["ok"] is True for r in decisions(world, "dry_run"))
+
+
+def test_an_account_number_in_the_brokers_text_is_masked_in_the_journal_and_the_checks(world):
+    world.broker.refuse_validation = "not permitted for account_number=5WX12345"
+    tick(world, live_config(dry_run=True), "09:00")
+    [row] = decisions(world, "dry_run")
+    assert "5WX12345" not in row["detail"] and "2345" in row["detail"]
+    assert "5WX12345" not in json.dumps(live_tick.read_checks()["intents"])
+
+
+def test_validation_can_be_switched_off(world):
+    tick(world, live_config(dry_run=True, validate_dry_run=False), "09:00")
+    [row] = decisions(world, "dry_run")
+    assert world.broker.calls == [] and "validation" not in json.loads(row["detail"])
+
+
+@pytest.mark.parametrize("value", [True, None, "false", 0])
+def test_validation_is_on_unless_exactly_false(value):
+    assert live_tick.validate_dry_run({"live": {"validate_dry_run": value}}) is True
+    assert live_tick.validate_dry_run({"live": {}}) is True
+    assert live_tick.validate_dry_run({"live": {"validate_dry_run": False}}) is False
+
+
+def test_live_mode_does_not_validate_separately(world):
+    tick(world, live_config(dry_run=False), "09:00")
+    assert world.broker.calls == [("place", BUY1, True)]  # the live path's own preflight is core's
 
 
 @pytest.mark.parametrize("value", [True, "false", None, 0, "no"])
@@ -742,6 +841,28 @@ SELL = "ldr.s.lot-1.10x9672"
 def test_the_adapter_refuses_a_live_placement_while_dry_run_is_on(world, adapter):
     res = make_adapter(live_config(dry_run=True)).place(buy_spec(), True)
     assert res["ok"] is False and "live.dry_run" in " ".join(res["unmet_gates"]) and adapter.submitted == []
+
+
+def test_the_adapter_validates_a_dry_run_intent_through_the_brokers_own_dry_run(world, adapter):
+    """The validate-only check is core's dry run: it reaches the broker with live false while
+    `live.dry_run` is on, and the same adapter still refuses the live submission."""
+    calls = []
+
+    async def place_order(account, session, order, *, live, serialize=None, deploy_limit_pct=None):
+        calls.append(live)
+        return {"ok": True, "dry_run": not live, "response": {"fee_calculation": {"total_fees": "0.01"}}}
+
+    import cherrypick.core.broker as core_broker_mod
+
+    core_broker_mod.place_order, saved = place_order, core_broker_mod.place_order
+    try:
+        broker = make_adapter(live_config(dry_run=True))
+        res = broker.place(buy_spec(), False)
+        assert res["ok"] is True and calls == [False]
+        assert live_tick._validation(res)["fees"] == {"total_fees": "0.01"}
+        assert broker.place(buy_spec(), True)["ok"] is False and calls == [False]  # live still refused
+    finally:
+        core_broker_mod.place_order = saved
 
 
 def test_the_adapter_places_when_dry_run_is_off_and_every_gate_holds(world, adapter):

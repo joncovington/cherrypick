@@ -130,9 +130,19 @@ import (`orders.py` may import the one pure id reader). The `live` block in the 
 - **Dry-run (`live.dry_run`, guarded)** is true unless it is exactly `false`. The tick still reads the
   broker, but the executor logs the orders it would place or cancel into the decisions journal
   (`mode = dry_run`, the order's client id in the reason, the shares, limit and time in force in the
-  detail) and calls the broker for nothing, so a shadow week can be checked against paper's lots. An
-  intent is journaled when it is new or its terms changed since the last row for that client id;
-  `--status` lists every standing intent. The adapter refuses a live placement while the flag is true, whatever the caller passed.
+  detail), so a shadow week can be checked against paper's lots (`ladder shadow`). An intent is
+  journaled when it is new or its terms changed since the last row for that client id; `--status`
+  lists every standing intent. The adapter refuses a live placement while the flag is true, whatever
+  the caller passed.
+- **Validate-only (`live.validate_dry_run`, on unless exactly `false`).** In dry-run each new intent to
+  place goes to the broker's own dry run (`Broker.place(spec, live=False)`, core's preflight): the
+  broker checks the order type and terms and states the buying-power effect and fees, and places
+  nothing. The answer is journaled with the intent (`detail.validation`: ok, problems, buying power,
+  fees, warnings; account numbers in the broker's text masked, in the journal and the checks file).
+  An answered intent is not asked again; one the broker could not be reached for is asked on the next
+  tick, and its answer is written onto the same row. After the first unanswered call in a tick the
+  rest wait for the next one, so a broker that is down costs one call deadline a tick, not one per
+  intent. Cancels are not validated. With it off, dry-run makes no broker call for intents.
 - **The tick (`live_loop --once`)**, in this order: the dead-man's switch (an arm record dated another
   day is removed before any broker read); the gates that block everything (any unmet and nothing is
   read, no adapter built); the orphan sweep; the splits; the reconcile; then, only inside
