@@ -60,7 +60,7 @@ def test_an_unblocked_tick_enters(tmp_path, monkeypatch):
 def test_a_tick_with_the_halt_flag_present_opens_nothing(tmp_path, monkeypatch):
     (tmp_path / "HALT").write_text("halted by a test", encoding="utf-8")
     entry, broker = _tick(monkeypatch, tmp_path, _ledger(tmp_path))
-    assert not _entered(broker)
+    assert not broker.placed
     assert "halt_flag_present" in entry["blocked"]
 
 
@@ -70,7 +70,7 @@ def test_a_tick_past_the_daily_loss_breaker_opens_nothing(tmp_path, monkeypatch)
     db_path = _ledger(tmp_path)
     _unrecorded_close(db_path, DAY, "LOST1", pnl=-250.0, fees=2.0)
     entry, broker = _tick(monkeypatch, tmp_path, db_path, _config(max_structures_per_day=None))
-    assert not _entered(broker)
+    assert not broker.placed
     assert "daily_loss_breaker" in entry["blocked"]
 
 

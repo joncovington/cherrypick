@@ -893,7 +893,7 @@ MUTANTS: tuple[Mutant, ...] = (
     ),
     Mutant(
         id="meic-live-arm-record",
-        breaks="a live tick enters with no arm record for today, or past disarm_time",
+        breaks="a live tick reaches the broker with no arm record for today",
         package="meic",
         tests=("tests/test_live_arming.py::test_a_live_tick_without_an_arm_never_reaches_the_broker",),
         module="cherrypick.meic.live_loop",
