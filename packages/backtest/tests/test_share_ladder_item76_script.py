@@ -282,7 +282,9 @@ def _declared(reqs: list[dict], session: str, expiry: str) -> bool:
 
 
 @pytest.mark.parametrize("rule", s76.ARMS)
-@pytest.mark.parametrize("drop", ["planned_sales", "every_other_session", "first_week"])
+@pytest.mark.parametrize(
+    "drop", ["planned_sales", "every_other_session", "first_week", "no_strike_first_week"]
+)
 @pytest.mark.parametrize("split", [False, True], ids=["no_split", "split"])
 def test_every_chain_the_arm_reads_is_a_requested_path_even_when_a_sale_waits(rule, drop, split):
     """#1439: the study reads only the paths the plan requested. A sale that finds no chain waits a session
@@ -300,13 +302,18 @@ def test_every_chain_the_arm_reads_is_a_requested_path_even_when_a_sale_waits(ru
         "planned_sales": lambda j: j in planned,
         "every_other_session": lambda j: j % 2 == 0,
         "first_week": lambda j: 14 <= j < 19,
+        "no_strike_first_week": lambda j: 14 <= j < 19,
     }[drop]
     by_date = {b.date: i for i, b in enumerate(bars)}
     real, reads = _chain_at(bars), []
 
     def chain_at(session, expiry):
         reads.append((session, expiry))
-        return {} if dropped(by_date[session]) else real(session, expiry)
+        if not dropped(by_date[session]):
+            return real(session, expiry)
+        if drop == "no_strike_first_week":  # a chain with no call quoted: no strike qualifies, the sale waits
+            return {key: q for key, q in real(session, expiry).items() if key[1] == "P"}
+        return {}
 
     s76.run_call_arm(rule, "SOXL", lot, bars, expiries, splits, last, chain_at, lambda s: 0.0)
     assert reads, "the arm read no chain at all: the case does not exercise the plan"
