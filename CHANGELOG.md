@@ -13,6 +13,12 @@ beyond the latest release.
 
 ### What's new
 
+- **A rebuilt past session reports what it carried past its close, from each ledger's own dates.**
+  `core.ledgers.OPEN_AS_OF_READERS` answers "which positions were held at the close of session S" for
+  all nine multi-day schemas, so review's `carried_overnight` and its capital at risk no longer come
+  from today's book (which dropped every position closed since) or from a stored copy. The stored-block
+  stopgap and its `carried_overnight_kept_from` stamp are gone. A rebuild of a past session can change
+  its carried figures, correcting numbers that were wrong. Nothing to do.
 - **A chain fetch no longer asks the vendor for a day that is not a trading session, and the store's
   quality report lists any such day it holds.** The vendor answers a Saturday with a placeholder market
   (every option bid 0.05, ask 99.00), which a study read as a session. `fetch-chains` counts these
