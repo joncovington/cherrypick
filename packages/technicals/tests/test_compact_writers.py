@@ -71,7 +71,8 @@ def test_the_earnings_times_file_is_written_compact(monkeypatch):
     monkeypatch.setattr(fet.time, "sleep", lambda _s: None)
     monkeypatch.setattr(fet, "fetch_day", lambda _d: {})
     monkeypatch.setattr(fet, "parse", lambda _body: {"AAA": "bmo"})
-    assert fet.main(["--days", "1"]) == 0
+    # Seven days always hold a weekday: `--days 1` asked for none on a Saturday and wrote no file.
+    assert fet.main(["--days", "7"]) == 0
     from cherrypick.technicals import paths
 
     files = list(paths.earnings_times_dir().glob("*.json"))
