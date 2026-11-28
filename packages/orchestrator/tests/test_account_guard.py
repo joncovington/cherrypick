@@ -164,6 +164,14 @@ def test_an_unresolved_broker_submission_or_orphan_refuses(world):
     _refused(accounts.set_account(cfg, "meic", "6666"), "not in its ledger")
 
 
+def test_a_past_session_still_unsettled_refuses(world):
+    """`open_positions` counts today's book only; a condor left from yesterday shows as overdue."""
+    cfg, statuses = world
+    statuses[("meic", None)] = flat(overdue_settlement=[{"trade_date": "2026-11-26"}])
+    _refused(accounts.set_account(cfg, "meic", "6666"), "meic", "still unsettled")
+    _refused(accounts.clear_account(cfg, "meic"), "meic", "still unsettled")
+
+
 def test_a_status_that_cannot_be_read_refuses(world):
     cfg, statuses = world
     statuses[("meic", None)] = None

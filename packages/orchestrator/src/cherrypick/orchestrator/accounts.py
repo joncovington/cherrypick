@@ -93,6 +93,8 @@ def book_reasons(status: dict[str, Any], record_date: str | None, today: str) ->
         unknown.append("whether it has a working order is not known")
     elif working:
         out.append(f"it has {working} working order(s)")
+    if status.get("overdue_settlement"):
+        out.append("a past session is still unsettled, so it still holds a position")
     if status.get("entry_intents"):
         out.append("an entry was sent and is not yet reconciled with the broker")
     if status.get("orphaned_orders"):

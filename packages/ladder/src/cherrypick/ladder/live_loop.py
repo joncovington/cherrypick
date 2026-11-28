@@ -124,6 +124,7 @@ def status(config: dict, *, designated: str | None = None, when=None) -> dict:
         "ok": True,
         "open_lots": open_lots,
         "working_orders": working_orders,
+        "orphaned_orders": len(live_tick.read_orphans()),
         "module": MODULE,
         "order_path": True,
         "dry_run": dry,

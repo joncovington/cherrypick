@@ -120,7 +120,8 @@ import (`orders.py` may import the one pure id reader). The `live` block in the 
 - **`--status`** is one JSON object: every gate, the masked account, whether it is armed today, `mode`
   (`dry-run` or `live`), `held` (what an uncertain submit is holding) and `checks` (the last tick's
   positions cross-check, declared splits and dry-run intents), plus `open_lots` and `working_orders`:
-  how many lots and unended orders the live ledger holds, `null` when it cannot be read (the orchestrator
+  how many lots and unended orders the live ledger holds, `null` when it cannot be read, and
+  `orphaned_orders` (the last sweep's broker orders the ledger lacks); the orchestrator
   refuses to change the designated account while either is not zero or unknown). It makes no broker
   call and `ready` reflects the gates only. **`--once`** runs one tick (below).
 - **The tick is a supervisor job.** The shipped suite config's `modules.ladder.live` has `task_name`,
