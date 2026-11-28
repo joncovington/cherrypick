@@ -13,13 +13,6 @@ beyond the latest release.
 
 ### What's new
 
-- **A config the automations loop would refuse shows up before the session, and a save cannot write
-  one.** The loop loads its config only inside the session, so a stale group name refused every tick from
-  the evening before and the first alert came 45 minutes after the open. The new `cli check` loads the
-  config as the loop does and writes nothing. The watchdog runs it on any change to the config file and
-  once a day, and a refusal is a WARN naming the file and the message. Every save of `automations.json`
-  (the Config page, the settings tool, the Groups, Builder and retire saves) runs it on the candidate
-  text first and refuses what the loop would refuse. Nothing to do.
 - **The console says more about what a page is showing.** Live > today now shows a dry run, live or unknown chip on
   MEIC's and the ladder's cards, armed or not, with a ? that explains a dry run; the value is each loop's own status, and
   an unreadable status reads unknown, never dry run. The MEIC summary calls an open trade on a past day "still open"
@@ -41,6 +34,13 @@ beyond the latest release.
   the day's expired contracts from 13:00, so an unsettled book is flagged three hours sooner on 2026-12-24
   and settled 0DTE legs no longer read as a mismatch until 16:00. `weeklyput`'s `--force` skips the window
   but never the half-day refusal. Nothing to do.
+- **A config the automations loop would refuse shows up before the session, and a save cannot write
+  one.** The loop loads its config only inside the session, so a stale group name refused every tick from
+  the evening before and the first alert came 45 minutes after the open. The new `cli check` loads the
+  config as the loop does and writes nothing. The watchdog runs it on any change to the config file and
+  once a day, and a refusal is a WARN naming the file and the message. Every save of `automations.json`
+  (the Config page, the settings tool, the Groups, Builder and retire saves) runs it on the candidate
+  text first and refuses what the loop would refuse. Nothing to do.
 - **A chain fetch no longer asks the vendor for a day that is not a trading session, and the store's
   quality report lists any such day it holds.** The vendor answers a Saturday with a placeholder market
   (every option bid 0.05, ask 99.00), which a study read as a session. `fetch-chains` counts these
